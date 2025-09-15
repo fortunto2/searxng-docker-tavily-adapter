@@ -43,7 +43,7 @@ services:
     networks:
       - searxng
     ports:
-      - "8000:8000"
+      - "8013:8000"
     volumes:
       - ./config.yaml:/srv/searxng-docker/config.yaml:ro  # Используем единый конфиг (скопируйте из config.example.yaml)
     depends_on:
@@ -58,6 +58,24 @@ services:
       options:
         max-size: "1m"
         max-file: "1"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: searxng-cloudflared
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - tavily-adapter
+    restart: unless-stopped
+    networks:
+      - searxng
+    environment:
+      - TUNNEL_METRICS=0.0.0.0:8081
+
 
 networks:
   searxng:
