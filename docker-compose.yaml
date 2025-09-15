@@ -67,7 +67,7 @@ services:
       - --no-autoupdate
       - run
       - --token
-      - ${CLOUDFLARE_TUNNEL_TOKEN}
+      - ${CLOUDFLARE_TUNNEL_TOKEN:-dummy_token}
     depends_on:
       - tavily-adapter
     restart: unless-stopped
@@ -75,6 +75,8 @@ services:
       - searxng
     environment:
       - TUNNEL_METRICS=0.0.0.0:8081
+    profiles:
+      - cloudflare
 
 
 networks:

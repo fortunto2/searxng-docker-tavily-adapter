@@ -1,0 +1,19 @@
+# docker-compose.override.yaml
+# Этот файл автоматически подхватывается docker-compose
+# Скопируйте в docker-compose.override.yaml для локальной разработки
+
+version: "3.7"
+services:
+  # Переопределения для локальной разработки
+  tavily-adapter:
+    ports:
+      - "8013:8000"  # Используем порт 8013 для тестов
+    environment:
+      - ENABLE_ANTI_CAPTCHA=true
+      - MAX_SEARCH_RETRIES=3
+      - ADAPTER_PORT=8000  # Внутренний порт остается 8000
+    
+  # Отключить Cloudflare для локальной разработки
+  cloudflared:
+    profiles:
+      - disabled
