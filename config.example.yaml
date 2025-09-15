@@ -38,6 +38,7 @@ outgoing:
   
 # Конфигурация поисковых движков
 engines:
+  # Основные поисковики
   - name: google
     disabled: false
   - name: bing
@@ -48,6 +49,21 @@ engines:
     disabled: false
   - name: startpage
     disabled: true    # Отключаем проблемный
+    
+  # Специализированные источники
+  - name: wikipedia
+    disabled: false
+    shortcut: wiki
+    
+  - name: arxiv
+    disabled: false
+    shortcut: arx
+    
+  - name: reddit
+    disabled: false
+    shortcut: re
+    
+  # Отключенные проблемные
   - name: yacy images
     disabled: true    # Отключаем проблемный
 
@@ -74,7 +90,7 @@ adapter:
   # Настройки поиска по умолчанию
   search:
     default_max_results: 10
-    default_engines: "google,duckduckgo,brave"
+    default_engines: "google,duckduckgo,wikipedia,arxiv,reddit"
     default_categories: "general"
     default_language: "auto"
     safesearch: 1

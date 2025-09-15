@@ -132,3 +132,27 @@ curl -X POST "http://localhost:8000/search" \
      -H "Content-Type: application/json" \
      -d '{"query": "python", "include_raw_content": true, "content_format": "text"}'
 ```
+
+### Умный выбор источников
+
+Адаптер автоматически выбирает лучшие источники в зависимости от запроса:
+
+- **Научные запросы** (`research`, `paper`, `study`) → **ArXiv + Wikipedia** приоритет
+- **Программирование** (`python`, `javascript`, `code`) → **Reddit + Google** приоритет  
+- **Биографии/История** (`biography`, `history`) → **Wikipedia** приоритет
+- **Общие запросы** → Стандартная комбинация всех источников
+
+Примеры:
+```bash
+# Научный запрос → ArXiv + Wikipedia в приоритете
+curl -X POST "http://localhost:8000/search" \
+     -d '{"query": "quantum computing research paper"}'
+
+# Программирование → Reddit + Google в приоритете
+curl -X POST "http://localhost:8000/search" \
+     -d '{"query": "python machine learning tutorial"}'
+
+# Биография → Wikipedia в приоритете
+curl -X POST "http://localhost:8000/search" \
+     -d '{"query": "Einstein biography"}'
+```

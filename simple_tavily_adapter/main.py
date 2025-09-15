@@ -43,11 +43,32 @@ USER_AGENTS = [
 
 # Список движков для фолбэка (более надежные и менее блокируемые)
 ENGINE_FALLBACKS = [
-    "google,duckduckgo,brave",  # Основная комбинация
-    "bing,qwant,startpage",     # Альтернативная комбинация
-    "searx,mojeek",             # Запасная комбинация
-    "yandex",                   # Последний резерв
+    "google,duckduckgo,wikipedia,arxiv,reddit",  # Основная комбинация с качественными источниками
+    "wikipedia,arxiv,reddit,brave",              # Академические + социальные источники
+    "bing,qwant,wikipedia",                      # Альтернативная комбинация
+    "searx,mojeek,reddit",                       # Запасная комбинация
+    "yandex,wikipedia",                          # Последний резерв
 ]
+
+def get_smart_engines(query: str) -> str:
+    """Интеллектуальный выбор движков в зависимости от запроса"""
+    query_lower = query.lower()
+    
+    # Научные запросы - приоритет ArXiv и Wikipedia
+    if any(word in query_lower for word in ['research', 'paper', 'study', 'научн', 'исследован', 'статья']):
+        return "arxiv,wikipedia,google,duckduckgo"
+    
+    # Программирование - Reddit + основные
+    elif any(word in query_lower for word in ['programming', 'python', 'javascript', 'code', 'программиров', 'код']):
+        return "reddit,google,duckduckgo,wikipedia"
+    
+    # Биографии и история - Wikipedia приоритет
+    elif any(word in query_lower for word in ['biography', 'history', 'биография', 'история']):
+        return "wikipedia,google,duckduckgo,reddit"
+    
+    # Общие запросы - стандартная комбинация
+    else:
+        return "google,duckduckgo,wikipedia,arxiv,reddit"
 
 app = FastAPI(title="SearXNG Tavily Adapter", version="1.0.0")
 
@@ -109,7 +130,13 @@ async def perform_search_with_retry(query: str, max_results: int, max_retries: i
     
     for attempt in range(max_retries):
         # Выбираем движки для текущей попытки
-        engines = ENGINE_FALLBACKS[attempt % len(ENGINE_FALLBACKS)]
+        if attempt == 0:
+            # Первая попытка - умный выбор на основе запроса
+            engines = get_smart_engines(query)
+        else:
+            # Последующие попытки - используем fallback список
+            engines = ENGINE_FALLBACKS[(attempt - 1) % len(ENGINE_FALLBACKS)]
+        
         user_agent = random.choice(USER_AGENTS)
         
         logger.info(f"Search attempt {attempt + 1}/{max_retries} with engines: {engines}")
@@ -180,7 +207,7 @@ async def perform_simple_search(query: str) -> dict:
         "q": query,
         "format": "json",
         "categories": "general", 
-        "engines": "google,duckduckgo,brave",
+        "engines": "google,duckduckgo,wikipedia,arxiv,reddit",
         "pageno": 1,
         "language": "auto",
         "safesearch": 1,

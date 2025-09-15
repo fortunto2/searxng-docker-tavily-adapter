@@ -79,10 +79,11 @@ docker compose up -d
 - **Fallback движки**: Google+DuckDuckGo → Bing+Qwant → Searx+Mojeek → Yandex
 
 Стратегия обхода:
-1. Попытка 1: `google,duckduckgo,brave`
-2. Попытка 2: `bing,qwant,startpage` 
-3. Попытка 3: `searx,mojeek`
-4. Попытка 4: `yandex`
+1. Попытка 1: `google,duckduckgo,wikipedia,arxiv,reddit` (основные + качественные источники)
+2. Попытка 2: `wikipedia,arxiv,reddit,brave` (академические + социальные)
+3. Попытка 3: `bing,qwant,wikipedia` (альтернативные поисковики)
+4. Попытка 4: `searx,mojeek,reddit` (запасные варианты)
+5. Попытка 5: `yandex,wikipedia` (последний резерв)
 
 ### Markdown контент по умолчанию
 ```json
