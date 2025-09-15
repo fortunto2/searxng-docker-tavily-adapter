@@ -45,6 +45,12 @@ uv run python test_markdown.py
 # Тест клиента и API
 uv run python test_client.py
 
+# Тест умного выбора движков
+uv run python test_smart_engines.py
+
+# Тест TavilyClient с выбором движков
+uv run python test_tavily_client.py
+
 # Тест anti-captcha функциональности
 uv run python test_anticaptcha.py
 
@@ -111,3 +117,48 @@ ENABLE_ANTI_CAPTCHA=true/false
 # Количество попыток (по умолчанию 3)
 MAX_SEARCH_RETRIES=5
 ```
+
+## Гибкий выбор поисковых движков
+
+### TavilyClient с пользовательским выбором движков
+
+```python
+from tavily_client import TavilyClient
+
+client = TavilyClient(api_key="test")
+
+# Умный автовыбор (по умолчанию)
+response = client.search("quantum physics research")
+
+# Пользовательский выбор движков
+response = client.search(
+    query="python tutorial", 
+    engines="reddit,stackoverflow,wikipedia"
+)
+
+# Специализированный поиск
+response = client.search(
+    query="population statistics", 
+    engines="wikidata,wikipedia"
+)
+
+# Один движок
+response = client.search(
+    query="latest news", 
+    engines="google"
+)
+```
+
+### Доступные движки
+
+- **google** - Google Search
+- **duckduckgo** - DuckDuckGo
+- **wikipedia** - Wikipedia
+- **wikidata** - Wikidata (структурированные данные)
+- **arxiv** - ArXiv (научные статьи)
+- **reddit** - Reddit
+- **bing** - Bing Search
+- **yandex** - Yandex
+- **brave** - Brave Search
+- **qwant** - Qwant
+- **startpage** - Startpage

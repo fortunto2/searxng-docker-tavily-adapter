@@ -46,7 +46,7 @@ engines:
   - name: duckduckgo
     disabled: false
   - name: brave
-    disabled: false
+    disabled: true
   - name: startpage
     disabled: true    # Отключаем проблемный
     

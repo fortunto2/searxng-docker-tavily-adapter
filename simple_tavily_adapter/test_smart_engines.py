@@ -2,7 +2,7 @@
 """
 Тест умного выбора движков
 """
-from main import get_smart_engines
+from engine_selector import get_smart_engines
 
 def test_smart_engine_selection():
     """Тест функции умного выбора движков"""

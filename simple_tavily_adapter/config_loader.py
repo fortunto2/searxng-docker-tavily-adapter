@@ -1,6 +1,7 @@
 """
 Configuration loader for Tavily adapter
 """
+
 import os
 import yaml
 from pathlib import Path
@@ -10,15 +11,16 @@ from dotenv import load_dotenv
 # Загружаем переменные окружения
 load_dotenv()
 
+
 class Config:
     def __init__(self, config_path: str = "/srv/searxng-docker/config.yaml"):
         self.config_path = Path(config_path)
         self._config = self._load_config()
-    
+
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from unified YAML file"""
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
             # Fallback to default config
@@ -29,46 +31,71 @@ class Config:
                     "scraper": {
                         "timeout": 10,
                         "max_content_length": 2500,
-                        "user_agent": "Mozilla/5.0 (compatible; TavilyBot/1.0)"
-                    }
+                        "user_agent": "Mozilla/5.0 (compatible; TavilyBot/1.0)",
+                    },
                 }
             }
-    
+
     @property
     def searxng_url(self) -> str:
         # Сначала env, потом конфиг, потом дефолт
-        return os.getenv("SEARCH_SERVER", 
-                        self._config.get("adapter", {}).get("searxng_url", "http://searxng:8080"))
-    
+        return os.getenv(
+            "SEARCH_SERVER",
+            self._config.get("adapter", {}).get("searxng_url", "http://searxng:8080"),
+        )
+
     @property
     def server_host(self) -> str:
-        return os.getenv("ADAPTER_HOST",
-                        self._config.get("adapter", {}).get("server", {}).get("host", "0.0.0.0"))
-    
+        return os.getenv(
+            "ADAPTER_HOST",
+            self._config.get("adapter", {}).get("server", {}).get("host", "0.0.0.0"),
+        )
+
     @property
     def server_port(self) -> int:
-        return int(os.getenv("ADAPTER_PORT",
-                           self._config.get("adapter", {}).get("server", {}).get("port", 8000)))
-    
+        return int(
+            os.getenv(
+                "ADAPTER_PORT",
+                self._config.get("adapter", {}).get("server", {}).get("port", 8000),
+            )
+        )
+
     @property
     def scraper_timeout(self) -> int:
         return self._config.get("adapter", {}).get("scraper", {}).get("timeout", 10)
-    
+
     @property
     def scraper_max_length(self) -> int:
-        return self._config.get("adapter", {}).get("scraper", {}).get("max_content_length", 2500)
-    
+        return (
+            self._config.get("adapter", {})
+            .get("scraper", {})
+            .get("max_content_length", 2500)
+        )
+
     @property
     def scraper_user_agent(self) -> str:
-        return self._config.get("adapter", {}).get("scraper", {}).get("user_agent", "Mozilla/5.0 (compatible; TavilyBot/1.0)")
-    
+        return (
+            self._config.get("adapter", {})
+            .get("scraper", {})
+            .get("user_agent", "Mozilla/5.0 (compatible; TavilyBot/1.0)")
+        )
+
     @property
     def default_max_results(self) -> int:
-        return self._config.get("adapter", {}).get("search", {}).get("default_max_results", 10)
-    
+        return (
+            self._config.get("adapter", {})
+            .get("search", {})
+            .get("default_max_results", 10)
+        )
+
     @property
     def default_engines(self) -> str:
-        return self._config.get("adapter", {}).get("search", {}).get("default_engines", "google,duckduckgo,brave")
+        return (
+            self._config.get("adapter", {})
+            .get("search", {})
+            .get("default_engines", "google,duckduckgo")
+        )
+
 
 # Глобальный экземпляр конфига
 config = Config()
