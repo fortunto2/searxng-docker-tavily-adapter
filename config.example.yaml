@@ -55,6 +55,11 @@ engines:
     disabled: false
     shortcut: wiki
     
+  - name: wikidata
+    engine: wikidata
+    disabled: false
+    shortcut: wd
+    
   - name: arxiv
     disabled: false
     shortcut: arx
@@ -90,7 +95,7 @@ adapter:
   # Настройки поиска по умолчанию
   search:
     default_max_results: 10
-    default_engines: "google,duckduckgo,wikipedia,arxiv,reddit"
+    default_engines: "google,duckduckgo,wikipedia,wikidata,arxiv,reddit"
     default_categories: "general"
     default_language: "auto"
     safesearch: 1

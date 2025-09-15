@@ -137,14 +137,15 @@ curl -X POST "http://localhost:8000/search" \
 
 Адаптер автоматически выбирает лучшие источники в зависимости от запроса:
 
-- **Научные запросы** (`research`, `paper`, `study`) → **ArXiv + Wikipedia** приоритет
+- **Научные запросы** (`research`, `paper`, `study`) → **ArXiv + Wikipedia + Wikidata** приоритет
 - **Программирование** (`python`, `javascript`, `code`) → **Reddit + Google** приоритет  
-- **Биографии/История** (`biography`, `history`) → **Wikipedia** приоритет
+- **Биографии/История** (`biography`, `history`) → **Wikipedia + Wikidata** приоритет
+- **Факты/Данные** (`facts`, `data`, `statistics`, `population`) → **Wikidata** приоритет
 - **Общие запросы** → Стандартная комбинация всех источников
 
 Примеры:
 ```bash
-# Научный запрос → ArXiv + Wikipedia в приоритете
+# Научный запрос → ArXiv + Wikipedia + Wikidata в приоритете
 curl -X POST "http://localhost:8000/search" \
      -d '{"query": "quantum computing research paper"}'
 
@@ -152,7 +153,11 @@ curl -X POST "http://localhost:8000/search" \
 curl -X POST "http://localhost:8000/search" \
      -d '{"query": "python machine learning tutorial"}'
 
-# Биография → Wikipedia в приоритете
+# Биография → Wikipedia + Wikidata в приоритете
 curl -X POST "http://localhost:8000/search" \
      -d '{"query": "Einstein biography"}'
+
+# Факты и данные → Wikidata в приоритете
+curl -X POST "http://localhost:8000/search" \
+     -d '{"query": "population of Japan statistics"}'
 ```

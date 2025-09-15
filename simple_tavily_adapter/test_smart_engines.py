@@ -26,6 +26,11 @@ def test_smart_engine_selection():
         ("history of Roman Empire", "биография/история"),
         ("биография Пушкина", "биография/история"),
         
+        # Факты и данные
+        ("population of Tokyo statistics", "факты/данные"),
+        ("GDP data by country", "факты/данные"),
+        ("население России", "факты/данные"),
+        
         # Общие запросы
         ("best restaurants in Paris", "общие"),
         ("weather forecast", "общие"),
@@ -47,11 +52,13 @@ def test_smart_engine_selection():
     scientific = get_smart_engines("quantum research paper")
     programming = get_smart_engines("python programming")
     biography = get_smart_engines("Einstein biography")
+    facts = get_smart_engines("population statistics")
     general = get_smart_engines("best pizza recipe")
     
     assert "arxiv" in scientific.split(",")[:2], "ArXiv должен быть в приоритете для научных запросов"
     assert "reddit" in programming.split(",")[:2], "Reddit должен быть в приоритете для программирования"
     assert "wikipedia" in biography.split(",")[:2], "Wikipedia должна быть в приоритете для биографий"
+    assert "wikidata" in facts.split(",")[:2], "Wikidata должна быть в приоритете для фактов/данных"
     
     print("✅ Все приоритеты работают корректно!")
 

@@ -43,11 +43,11 @@ USER_AGENTS = [
 
 # Список движков для фолбэка (более надежные и менее блокируемые)
 ENGINE_FALLBACKS = [
-    "google,duckduckgo,wikipedia,arxiv,reddit",  # Основная комбинация с качественными источниками
-    "wikipedia,arxiv,reddit,brave",              # Академические + социальные источники
-    "bing,qwant,wikipedia",                      # Альтернативная комбинация
-    "searx,mojeek,reddit",                       # Запасная комбинация
-    "yandex,wikipedia",                          # Последний резерв
+    "google,duckduckgo,wikipedia,wikidata,arxiv,reddit",  # Основная комбинация с качественными источниками
+    "wikipedia,wikidata,arxiv,reddit,brave",             # Академические + структурированные данные
+    "bing,qwant,wikipedia,wikidata",                     # Альтернативная комбинация
+    "searx,mojeek,reddit,wikidata",                      # Запасная комбинация
+    "yandex,wikipedia,wikidata",                         # Последний резерв
 ]
 
 def get_smart_engines(query: str) -> str:
@@ -56,19 +56,23 @@ def get_smart_engines(query: str) -> str:
     
     # Научные запросы - приоритет ArXiv и Wikipedia
     if any(word in query_lower for word in ['research', 'paper', 'study', 'научн', 'исследован', 'статья']):
-        return "arxiv,wikipedia,google,duckduckgo"
+        return "arxiv,wikipedia,wikidata,google,duckduckgo"
     
     # Программирование - Reddit + основные
     elif any(word in query_lower for word in ['programming', 'python', 'javascript', 'code', 'программиров', 'код']):
-        return "reddit,google,duckduckgo,wikipedia"
+        return "reddit,google,duckduckgo,wikipedia,wikidata"
     
-    # Биографии и история - Wikipedia приоритет
+    # Биографии и история - Wikipedia + Wikidata приоритет
     elif any(word in query_lower for word in ['biography', 'history', 'биография', 'история']):
-        return "wikipedia,google,duckduckgo,reddit"
+        return "wikipedia,wikidata,google,duckduckgo,reddit"
+    
+    # Факты и данные - Wikidata приоритет  
+    elif any(word in query_lower for word in ['facts', 'data', 'population', 'statistics', 'факт', 'данные', 'население', 'статистик']):
+        return "wikidata,wikipedia,google,duckduckgo"
     
     # Общие запросы - стандартная комбинация
     else:
-        return "google,duckduckgo,wikipedia,arxiv,reddit"
+        return "google,duckduckgo,wikipedia,wikidata,arxiv,reddit"
 
 app = FastAPI(title="SearXNG Tavily Adapter", version="1.0.0")
 
@@ -207,7 +211,7 @@ async def perform_simple_search(query: str) -> dict:
         "q": query,
         "format": "json",
         "categories": "general", 
-        "engines": "google,duckduckgo,wikipedia,arxiv,reddit",
+        "engines": "google,duckduckgo,wikipedia,wikidata,arxiv,reddit",
         "pageno": 1,
         "language": "auto",
         "safesearch": 1,
