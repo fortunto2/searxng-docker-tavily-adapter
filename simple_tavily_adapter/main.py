@@ -4,6 +4,7 @@ FastAPI server that provides Tavily-compatible API using SearXNG backend
 import asyncio
 import logging
 import os
+import random
 import time
 import uuid
 from typing import Any, Literal
@@ -28,6 +29,25 @@ logger = logging.getLogger(__name__)
 
 logger.info(f"Using search server: {config.searxng_url}")
 logger.info(f"Server will run on: {config.server_host}:{config.server_port}")
+
+# Список User-Agent'ов для ротации
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:89.0) Gecko/20100101 Firefox/89.0",
+    "Mozilla/5.0 (compatible; TavilyBot/1.0)",
+    "Mozilla/5.0 (compatible; SearchBot/1.0)",
+]
+
+# Список движков для фолбэка (более надежные и менее блокируемые)
+ENGINE_FALLBACKS = [
+    "google,duckduckgo,brave",  # Основная комбинация
+    "bing,qwant,startpage",     # Альтернативная комбинация
+    "searx,mojeek",             # Запасная комбинация
+    "yandex",                   # Последний резерв
+]
 
 app = FastAPI(title="SearXNG Tavily Adapter", version="1.0.0")
 
@@ -84,6 +104,113 @@ async def fetch_raw_content(session: aiohttp.ClientSession, url: str, content_fo
         return None
 
 
+async def perform_search_with_retry(query: str, max_results: int, max_retries: int = 3) -> dict:
+    """Выполняет поиск с повторными попытками и разными движками при капче"""
+    
+    for attempt in range(max_retries):
+        # Выбираем движки для текущей попытки
+        engines = ENGINE_FALLBACKS[attempt % len(ENGINE_FALLBACKS)]
+        user_agent = random.choice(USER_AGENTS)
+        
+        logger.info(f"Search attempt {attempt + 1}/{max_retries} with engines: {engines}")
+        
+        # Формируем запрос к SearXNG
+        searxng_params = {
+            "q": query,
+            "format": "json", 
+            "categories": "general",
+            "engines": engines,
+            "pageno": 1,
+            "language": "auto",
+            "safesearch": 1,
+        }
+        
+        # Рандомизируем заголовки для обхода блокировок
+        headers = {
+            'X-Forwarded-For': f"192.168.1.{random.randint(1, 254)}",
+            'X-Real-IP': f"10.0.0.{random.randint(1, 254)}",
+            'User-Agent': user_agent,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        try:
+            # Добавляем случайную задержку для имитации человеческого поведения
+            if attempt > 0:
+                delay = random.uniform(1, 3)
+                logger.info(f"Waiting {delay:.1f}s before retry...")
+                await asyncio.sleep(delay)
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{config.searxng_url}/search",
+                    data=searxng_params,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results = data.get("results", [])
+                        if results:  # Если есть результаты, возвращаем
+                            logger.info(f"Search successful on attempt {attempt + 1}")
+                            return data
+                        else:
+                            logger.warning(f"No results on attempt {attempt + 1}")
+                    else:
+                        logger.warning(f"HTTP {response.status} on attempt {attempt + 1}")
+                        
+        except aiohttp.TimeoutError:
+            logger.warning(f"Timeout on attempt {attempt + 1}")
+        except Exception as e:
+            logger.warning(f"Error on attempt {attempt + 1}: {e}")
+    
+    # Если все попытки провалились, возвращаем пустые результаты
+    logger.error(f"All {max_retries} search attempts failed")
+    return {"results": []}
+
+
+async def perform_simple_search(query: str) -> dict:
+    """Простой поиск без anti-captcha логики (старое поведение)"""
+    searxng_params = {
+        "q": query,
+        "format": "json",
+        "categories": "general", 
+        "engines": "google,duckduckgo,brave",
+        "pageno": 1,
+        "language": "auto",
+        "safesearch": 1,
+    }
+    
+    headers = {
+        'X-Forwarded-For': '127.0.0.1',
+        'X-Real-IP': '127.0.0.1',
+        'User-Agent': 'Mozilla/5.0 (compatible; TavilyBot/1.0)',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{config.searxng_url}/search",
+                data=searxng_params,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=500, detail="SearXNG request failed")
+                return await response.json()
+    except aiohttp.TimeoutError:
+        raise HTTPException(status_code=504, detail="SearXNG timeout")
+    except Exception as e:
+        logger.error(f"SearXNG error: {e}")
+        raise HTTPException(status_code=500, detail="Search service unavailable")
+
+
 @app.post("/search")
 async def search(request: SearchRequest) -> dict[str, Any]:
     """
@@ -94,43 +221,15 @@ async def search(request: SearchRequest) -> dict[str, Any]:
     
     logger.info(f"Search request: {request.query}")
     
-    # Формируем запрос к SearXNG
-    searxng_params = {
-        "q": request.query,
-        "format": "json",
-        "categories": "general",
-        "engines": "google,duckduckgo,brave",  # Убрали Bing
-        "pageno": 1,
-        "language": "auto",
-        "safesearch": 1,
-    }
+    # Выполняем поиск с retry логикой и обходом капчи
+    max_retries = int(os.getenv("MAX_SEARCH_RETRIES", "3"))
+    enable_anti_captcha = os.getenv("ENABLE_ANTI_CAPTCHA", "true").lower() == "true"
     
-# Убрали обработку доменов - не нужно для упрощенного API
-    
-    # Выполняем запрос к SearXNG
-    headers = {
-        'X-Forwarded-For': '127.0.0.1',
-        'X-Real-IP': '127.0.0.1',
-        'User-Agent': 'Mozilla/5.0 (compatible; TavilyBot/1.0)',
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(
-                f"{config.searxng_url}/search",
-                data=searxng_params,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=500, detail="SearXNG request failed")
-                searxng_data = await response.json()
-        except aiohttp.TimeoutError:
-            raise HTTPException(status_code=504, detail="SearXNG timeout")
-        except Exception as e:
-            logger.error(f"SearXNG error: {e}")
-            raise HTTPException(status_code=500, detail="Search service unavailable")
+    if enable_anti_captcha:
+        searxng_data = await perform_search_with_retry(request.query, request.max_results, max_retries)
+    else:
+        # Простой поиск без retry (старое поведение)
+        searxng_data = await perform_simple_search(request.query)
     
     # Конвертируем результаты в формат Tavily
     results = []

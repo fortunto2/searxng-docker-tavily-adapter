@@ -3,7 +3,7 @@ name = "searxng-tavily-adapter"
 version = "1.0.0"
 description = "SearXNG Tavily API adapter with Markdown content support and HTML sanitization"
 authors = [{name = "SearXNG Tavily Adapter Team"}]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.104.1",
     "uvicorn[standard]>=0.24.0",
