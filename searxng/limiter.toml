@@ -5,3 +5,24 @@
 # activate advanced bot protection
 # enable this when running the instance for a public usage on the internet
 link_token = false
+
+# Увеличиваем лимиты для локального использования с адаптером
+requests_per_minute = 200
+requests_per_hour = 2000
+
+# Whitelist для Docker network и localhost
+ip_whitelist = [
+    "127.0.0.1",
+    "::1",
+    "10.0.0.0/8",      # Docker default networks
+    "172.16.0.0/12",   # Docker networks  
+    "192.168.0.0/16"   # Local networks
+]
+
+[botdetection.user_agent]
+# Разрешаем наши адаптеры
+allowed_patterns = [
+    ".*TavilyBot.*",
+    ".*SearchBot.*",
+    "Mozilla.*"
+]
