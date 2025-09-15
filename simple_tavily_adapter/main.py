@@ -3,21 +3,31 @@ FastAPI server that provides Tavily-compatible API using SearXNG backend
 """
 import asyncio
 import logging
+import os
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import aiohttp
+import nh3
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from markdownify import markdownify as md
 from pydantic import BaseModel
 
 from tavily_client import TavilyResponse, TavilyResult
 from config_loader import config
 
+# Загружаем переменные окружения
+load_dotenv()
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+logger.info(f"Using search server: {config.searxng_url}")
+logger.info(f"Server will run on: {config.server_host}:{config.server_port}")
 
 app = FastAPI(title="SearXNG Tavily Adapter", version="1.0.0")
 
@@ -26,10 +36,11 @@ class SearchRequest(BaseModel):
     query: str
     max_results: int = 10
     include_raw_content: bool = False
+    content_format: Literal["text", "markdown"] = "markdown"
 
 
-async def fetch_raw_content(session: aiohttp.ClientSession, url: str) -> str | None:
-    """Скрапит страницу и возвращает первые 2500 символов текста"""
+async def fetch_raw_content(session: aiohttp.ClientSession, url: str, content_format: str = "text") -> str | None:
+    """Скрапит страницу и возвращает контент в указанном формате"""
     try:
         async with session.get(
             url,
@@ -40,21 +51,36 @@ async def fetch_raw_content(session: aiohttp.ClientSession, url: str) -> str | N
                 return None
             
             html = await response.text()
-            soup = BeautifulSoup(html, 'html.parser')
             
-            # Удаляем ненужное
-            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            # Очищаем HTML с помощью nh3 для безопасности
+            clean_html = nh3.clean(html, tags={
+                'p', 'div', 'span', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'br', 'blockquote',
+                'pre', 'code', 'table', 'tr', 'td', 'th', 'thead', 'tbody'
+            }, attributes={
+                'a': {'href'}, 'img': {'src', 'alt'}, '*': {'class', 'id'}
+            })
+            
+            soup = BeautifulSoup(clean_html, 'html.parser')
+            
+            # Удаляем ненужные элементы
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
                 tag.decompose()
             
-            # Берем текст
-            text = soup.get_text(separator=' ', strip=True)
+            if content_format == "markdown":
+                # Конвертируем в Markdown
+                text = md(str(soup), heading_style="ATX", strip=['script', 'style'])
+            else:
+                # Берем простой текст
+                text = soup.get_text(separator=' ', strip=True)
             
             # Обрезаем до настроенного размера
             if len(text) > config.scraper_max_length:
                 text = text[:config.scraper_max_length] + "..."
             
             return text
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error fetching content from {url}: {e}")
         return None
 
 
@@ -116,7 +142,7 @@ async def search(request: SearchRequest) -> dict[str, Any]:
         urls_to_scrape = [r["url"] for r in searxng_results[:request.max_results] if r.get("url")]
         
         async with aiohttp.ClientSession() as scrape_session:
-            tasks = [fetch_raw_content(scrape_session, url) for url in urls_to_scrape]
+            tasks = [fetch_raw_content(scrape_session, url, request.content_format) for url in urls_to_scrape]
             page_contents = await asyncio.gather(*tasks, return_exceptions=True)
             
             for url, content in zip(urls_to_scrape, page_contents):

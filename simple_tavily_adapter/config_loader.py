@@ -1,9 +1,14 @@
 """
 Configuration loader for Tavily adapter
 """
+import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения
+load_dotenv()
 
 class Config:
     def __init__(self, config_path: str = "/srv/searxng-docker/config.yaml"):
@@ -31,15 +36,19 @@ class Config:
     
     @property
     def searxng_url(self) -> str:
-        return self._config.get("adapter", {}).get("searxng_url", "http://searxng:8080")
+        # Сначала env, потом конфиг, потом дефолт
+        return os.getenv("SEARCH_SERVER", 
+                        self._config.get("adapter", {}).get("searxng_url", "http://searxng:8080"))
     
     @property
     def server_host(self) -> str:
-        return self._config.get("adapter", {}).get("server", {}).get("host", "0.0.0.0")
+        return os.getenv("ADAPTER_HOST",
+                        self._config.get("adapter", {}).get("server", {}).get("host", "0.0.0.0"))
     
     @property
     def server_port(self) -> int:
-        return self._config.get("adapter", {}).get("server", {}).get("port", 8000)
+        return int(os.getenv("ADAPTER_PORT",
+                           self._config.get("adapter", {}).get("server", {}).get("port", 8000)))
     
     @property
     def scraper_timeout(self) -> int:

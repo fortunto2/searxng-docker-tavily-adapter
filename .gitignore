@@ -40,3 +40,4 @@ venv.bak/
 # Environment variables
 .env.local
 .env.production
+.env
