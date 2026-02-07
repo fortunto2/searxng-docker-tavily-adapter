@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from tavily_client import TavilyResponse, TavilyResult
 from config_loader import config
-from engine_selector import get_smart_engines
+from engine_selector import get_smart_engines, get_categories_for_engines
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -164,18 +164,17 @@ async def perform_search_with_retry(
         )
 
         # Формируем запрос к SearXNG
+        # SearXNG requires matching categories for engines (reddit=social media, github=it, etc.)
+        categories = get_categories_for_engines(engines) if user_engines else "general"
         searxng_params = {
             "q": query,
             "format": "json",
+            "categories": categories,
             "engines": engines,
             "pageno": 1,
             "language": "auto",
             "safesearch": 1,
         }
-        # categories добавляем только если engines не указаны явно пользователем,
-        # иначе SearXNG добавит default engines из категории поверх указанных
-        if not user_engines:
-            searxng_params["categories"] = "general"
 
         # Рандомизируем заголовки для обхода блокировок
         headers = {
@@ -234,17 +233,16 @@ async def perform_simple_search(query: str, user_engines: str | None = None) -> 
     # Выбираем движки: пользовательские или умный выбор
     engines = user_engines if user_engines else get_smart_engines(query)
     
+    categories = get_categories_for_engines(engines) if user_engines else "general"
     searxng_params = {
         "q": query,
         "format": "json",
+        "categories": categories,
         "engines": engines,
         "pageno": 1,
         "language": "auto",
         "safesearch": 1,
     }
-    # categories добавляем только если engines не указаны явно пользователем
-    if not user_engines:
-        searxng_params["categories"] = "general"
 
     headers = {
         "X-Forwarded-For": "127.0.0.1",

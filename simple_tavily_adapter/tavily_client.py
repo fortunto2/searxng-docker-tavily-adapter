@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 from config_loader import config
-from engine_selector import get_smart_engines
+from engine_selector import get_smart_engines, get_categories_for_engines
 
 
 class TavilyResult(BaseModel):
@@ -114,18 +114,17 @@ class TavilyClient:
             engines = get_smart_engines(query)
 
         # Формируем запрос к SearXNG
+        # SearXNG requires matching categories for engines (reddit=social media, github=it, etc.)
+        categories = get_categories_for_engines(engines) if user_specified else "general"
         searxng_params = {
             "q": query,
             "format": "json",
+            "categories": categories,
             "engines": engines,
             "pageno": 1,
             "language": "auto",
             "safesearch": 1,
         }
-        # categories добавляем только если engines не указаны явно пользователем,
-        # иначе SearXNG добавит default engines из категории поверх указанных
-        if not user_specified:
-            searxng_params["categories"] = "general"
 
         # Убрали обработку доменов - не нужно для упрощенного API
 

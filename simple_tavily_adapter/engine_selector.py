@@ -63,6 +63,47 @@ _CATEGORIES = {
 }
 
 
+# Engine → SearXNG categories mapping
+# SearXNG requires matching categories for engines to return results
+ENGINE_CATEGORIES: dict[str, str] = {
+    "google": "general",
+    "duckduckgo": "general",
+    "brave": "general",
+    "wikipedia": "general",
+    "wikidata": "general",
+    "google news": "news",
+    "reddit": "social media",
+    "hacker news": "social media",
+    "github": "it",
+    "stackoverflow": "it",
+    "arxiv": "science",
+    "google scholar": "science",
+    "google play apps": "general",
+    "apple app store": "general",
+    "npm": "it",
+    "pypi": "it",
+    "crates.io": "it",
+    "bitbucket": "it",
+    "codeberg": "it",
+    "gitlab": "it",
+}
+
+
+def get_categories_for_engines(engines: str) -> str:
+    """Return comma-separated SearXNG categories needed for the given engines.
+
+    SearXNG requires matching categories — e.g. reddit needs 'social media',
+    github needs 'it'. Without the right category, the engine returns 0 results.
+    """
+    cats: set[str] = set()
+    for engine in engines.split(","):
+        engine = engine.strip()
+        cat = ENGINE_CATEGORIES.get(engine)
+        if cat:
+            cats.add(cat)
+    return ",".join(sorted(cats)) if cats else "general"
+
+
 def get_smart_engines(query: str) -> str:
     """Select engines based on query keywords. Returns comma-separated engine names.
 
