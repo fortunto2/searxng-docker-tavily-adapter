@@ -109,6 +109,7 @@ class TavilyClient:
         request_id = str(uuid.uuid4())
 
         # Выбираем движки: переданные пользователем или умный выбор
+        user_specified = engines is not None
         if engines is None:
             engines = get_smart_engines(query)
 
@@ -116,12 +117,15 @@ class TavilyClient:
         searxng_params = {
             "q": query,
             "format": "json",
-            "categories": "general",
             "engines": engines,
             "pageno": 1,
             "language": "auto",
             "safesearch": 1,
         }
+        # categories добавляем только если engines не указаны явно пользователем,
+        # иначе SearXNG добавит default engines из категории поверх указанных
+        if not user_specified:
+            searxng_params["categories"] = "general"
 
         # Убрали обработку доменов - не нужно для упрощенного API
 

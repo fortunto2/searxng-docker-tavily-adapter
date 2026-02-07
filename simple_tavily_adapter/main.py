@@ -167,12 +167,15 @@ async def perform_search_with_retry(
         searxng_params = {
             "q": query,
             "format": "json",
-            "categories": "general",
             "engines": engines,
             "pageno": 1,
             "language": "auto",
             "safesearch": 1,
         }
+        # categories добавляем только если engines не указаны явно пользователем,
+        # иначе SearXNG добавит default engines из категории поверх указанных
+        if not user_engines:
+            searxng_params["categories"] = "general"
 
         # Рандомизируем заголовки для обхода блокировок
         headers = {
@@ -234,12 +237,14 @@ async def perform_simple_search(query: str, user_engines: str | None = None) -> 
     searxng_params = {
         "q": query,
         "format": "json",
-        "categories": "general",
         "engines": engines,
         "pageno": 1,
         "language": "auto",
         "safesearch": 1,
     }
+    # categories добавляем только если engines не указаны явно пользователем
+    if not user_engines:
+        searxng_params["categories"] = "general"
 
     headers = {
         "X-Forwarded-For": "127.0.0.1",
