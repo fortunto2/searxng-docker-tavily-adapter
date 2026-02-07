@@ -14,12 +14,14 @@ Engine groups:
 """
 
 # Engine groups — all must be enabled in SearXNG config
-ENGINES_GENERAL = "google,duckduckgo,brave,reddit"
+# NOTE: reddit and hacker news engines are broken in SearXNG (return 0 results).
+# Use site:reddit.com or site:news.ycombinator.com in query via google instead.
+ENGINES_GENERAL = "google,duckduckgo,brave"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
-ENGINES_TECH = "google,github,stackoverflow,reddit,duckduckgo"
-ENGINES_PRODUCT = "google,duckduckgo,brave,reddit,hacker news,google play apps,apple app store"
+ENGINES_TECH = "google,github,stackoverflow,duckduckgo"
+ENGINES_PRODUCT = "google,duckduckgo,brave,google play apps,apple app store"
 ENGINES_REFERENCE = "google,wikipedia,wikidata,duckduckgo"
-ENGINES_NEWS = "google,google news,duckduckgo,brave,reddit,hacker news"
+ENGINES_NEWS = "google,google news,duckduckgo,brave"
 
 # Keywords for each category (EN + RU)
 _ACADEMIC_KW = [
