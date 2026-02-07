@@ -54,6 +54,12 @@ engines:
   - name: hacker news
     disabled: false
     shortcut: hn
+  - name: lemmy communities
+    disabled: false
+    shortcut: lmc
+  - name: lemmy posts
+    disabled: false
+    shortcut: lmp
 
   # === Tech & Dev (used by smart selector for programming queries) ===
   - name: github
@@ -71,6 +77,27 @@ engines:
   - name: dockerhub
     disabled: false
     shortcut: dh
+
+  # === App Stores (used by smart selector for mobile/product queries) ===
+  - name: google play apps
+    disabled: false
+    shortcut: gpa
+  - name: apple app store
+    disabled: false
+    shortcut: aps
+
+  # === News ===
+  - name: google news
+    disabled: false
+    shortcut: gon
+
+  # === Utilities ===
+  - name: currency
+    disabled: false
+    shortcut: cc
+  - name: fdroid
+    disabled: false
+    shortcut: fd
 
   # === Academic & Reference (used by smart selector for research queries) ===
   - name: arxiv

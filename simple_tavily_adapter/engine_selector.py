@@ -17,9 +17,9 @@ Engine groups:
 ENGINES_GENERAL = "google,duckduckgo,brave,reddit"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
 ENGINES_TECH = "google,github,stackoverflow,reddit,duckduckgo"
-ENGINES_PRODUCT = "google,duckduckgo,brave,reddit,hacker news"
+ENGINES_PRODUCT = "google,duckduckgo,brave,reddit,hacker news,google play apps,apple app store"
 ENGINES_REFERENCE = "google,wikipedia,wikidata,duckduckgo"
-ENGINES_NEWS = "google,duckduckgo,brave,reddit,hacker news"
+ENGINES_NEWS = "google,google news,duckduckgo,brave,reddit,hacker news"
 
 # Keywords for each category (EN + RU)
 _ACADEMIC_KW = [
@@ -40,6 +40,7 @@ _PRODUCT_KW = [
     "saas", "startup", "product", "market", "landing",
     "приложени", "аналог", "конкурент", "цена", "отзыв",
     "best", "top", "comparison", "tools for",
+    "app store", "play store", "ios", "android",
 ]
 _REFERENCE_KW = [
     "what is", "definition", "meaning", "wikipedia", "history of",
