@@ -43,13 +43,12 @@ USER_AGENTS = [
     "Mozilla/5.0 (compatible; SearchBot/1.0)",
 ]
 
-# Список движков для фолбэка (более надежные и менее блокируемые)
+# Fallback engine lists for retry logic (when primary engines fail/captcha)
 ENGINE_FALLBACKS = [
-    "google,duckduckgo,wikipedia,wikidata,arxiv,reddit",  # Основная комбинация с качественными источниками
-    "wikipedia,wikidata,arxiv,reddit",  # Академические + структурированные данные
-    "bing,qwant,wikipedia,wikidata",  # Альтернативная комбинация
-    "searx,mojeek,reddit,wikidata",  # Запасная комбинация
-    "yandex,wikipedia,wikidata",  # Последний резерв
+    "google,duckduckgo,brave,reddit",       # Primary: broad web search
+    "google,brave,reddit,hacker news",       # Retry: tech-friendly mix
+    "duckduckgo,brave,wikipedia,reddit",     # Retry: alternative combo
+    "google,duckduckgo,wikipedia,wikidata",  # Retry: reference-heavy
 ]
 
 
