@@ -351,6 +351,58 @@ async def search(request: SearchRequest) -> dict[str, Any]:
     return response.model_dump()
 
 
+class TranscriptRequest(BaseModel):
+    video_id: str  # YouTube video ID (e.g. "dQw4w9WgXcQ") or full URL
+    languages: list[str] = ["en", "ru"]
+    max_length: int = 5000
+
+
+@app.post("/transcript")
+async def transcript(request: TranscriptRequest) -> dict[str, Any]:
+    """
+    Extract YouTube video transcript/subtitles via youtube-transcript-api.
+    Returns plain text transcript (auto-generated or manual captions).
+    """
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError:
+        raise HTTPException(status_code=500, detail="youtube-transcript-api not installed")
+
+    # Extract video ID from URL if needed
+    video_id = request.video_id
+    if "youtube.com" in video_id or "youtu.be" in video_id:
+        import re
+        match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", video_id)
+        if match:
+            video_id = match.group(1)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    logger.info(f"Transcript request: {video_id}")
+
+    try:
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(video_id, languages=request.languages)
+        text = " ".join([s.text for s in fetched.snippets])
+
+        if len(text) > request.max_length:
+            text = text[: request.max_length] + "..."
+
+        return {
+            "video_id": video_id,
+            "language": fetched.language,
+            "text": text,
+            "snippet_count": len(fetched.snippets),
+            "char_count": len(text),
+        }
+    except Exception as e:
+        logger.warning(f"Transcript error for {video_id}: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Transcript not available: {type(e).__name__}",
+        )
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""

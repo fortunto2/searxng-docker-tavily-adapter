@@ -14,6 +14,7 @@ dependencies = [
     "markdownify>=1.2.0",
     "nh3>=0.3.0",
     "python-dotenv>=1.0.0",
+    "youtube-transcript-api>=1.2.0",
 ]
 
 [project.optional-dependencies]

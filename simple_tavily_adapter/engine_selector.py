@@ -80,6 +80,7 @@ ENGINE_CATEGORIES: dict[str, str] = {
     "stackoverflow": "it",
     "arxiv": "science",
     "google scholar": "science",
+    "youtube": "videos",
     "google play apps": "general",
     "apple app store": "general",
     "npm": "it",

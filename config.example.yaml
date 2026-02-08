@@ -86,6 +86,11 @@ engines:
     disabled: false
     shortcut: aps
 
+  # === Video (YouTube reviews, tutorials, audience size) ===
+  - name: youtube
+    disabled: false
+    shortcut: yt
+
   # === News ===
   - name: google news
     disabled: false
