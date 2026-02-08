@@ -31,6 +31,7 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8999/
       - BIND_ADDRESS=[::]:8080
+      - PYTHONDONTWRITEBYTECODE=1  # Prevent .pyc caching (allows volume-mounted .py to take effect)
     logging:
       driver: "json-file"
       options:

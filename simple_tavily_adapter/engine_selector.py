@@ -16,10 +16,10 @@ Engine groups:
 # Engine groups — all must be enabled in SearXNG config
 # NOTE: reddit engine uses PullPush API backend (custom engine, see searxng/engines/reddit.py).
 # Hacker news engine is broken in SearXNG — use site:news.ycombinator.com via google instead.
-ENGINES_GENERAL = "google,duckduckgo,brave,reddit"
+ENGINES_GENERAL = "google,duckduckgo,brave"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
 ENGINES_TECH = "google,github,stackoverflow,duckduckgo"
-ENGINES_PRODUCT = "google,duckduckgo,brave,reddit,google play apps,apple app store"
+ENGINES_PRODUCT = "google,duckduckgo,brave,google play apps,apple app store"
 ENGINES_REFERENCE = "google,wikipedia,wikidata,duckduckgo"
 ENGINES_NEWS = "google,google news,duckduckgo,brave"
 
