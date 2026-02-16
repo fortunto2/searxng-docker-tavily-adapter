@@ -129,6 +129,30 @@ engines:
     disabled: false
     shortcut: wd
 
+  # === Independent indexes (diversity, not Google/Bing clones) ===
+  - name: mojeek
+    disabled: false
+  - name: stract
+    disabled: false
+  - name: marginalia
+    disabled: false
+
+  # === Forums & Discussions ===
+  - name: crowdview
+    disabled: false
+  - name: lobste.rs
+    disabled: false
+
+  # === AI/ML ===
+  - name: huggingface
+    disabled: false
+  - name: huggingface datasets
+    disabled: false
+
+  # === Tech docs ===
+  - name: mdn
+    disabled: false
+
   # === Disabled ===
   - name: yacy images
     disabled: true

@@ -14,14 +14,14 @@ Engine groups:
 """
 
 # Engine groups — all must be enabled in SearXNG config
-# NOTE: reddit engine uses PullPush API backend (custom engine, see searxng/engines/reddit.py).
-# Hacker news engine is broken in SearXNG — use site:news.ycombinator.com via google instead.
-ENGINES_GENERAL = "google,duckduckgo,brave"
+# Independent indexes (mojeek, stract, marginalia) added for diversity.
+ENGINES_GENERAL = "google,duckduckgo,brave,mojeek"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
-ENGINES_TECH = "google,github,stackoverflow,duckduckgo"
-ENGINES_PRODUCT = "google,duckduckgo,brave,google play apps,apple app store"
+ENGINES_TECH = "google,github,stackoverflow,duckduckgo,lobste.rs,mdn"
+ENGINES_PRODUCT = "google,duckduckgo,brave,mojeek,crowdview,google play apps,apple app store"
 ENGINES_REFERENCE = "google,wikipedia,wikidata,duckduckgo"
-ENGINES_NEWS = "google,google news,duckduckgo,brave"
+ENGINES_NEWS = "google,google news,duckduckgo,brave,hackernews,lobste.rs"
+ENGINES_AI = "google,github,huggingface,arxiv,duckduckgo"
 
 # Keywords for each category (EN + RU)
 _ACADEMIC_KW = [
@@ -43,6 +43,7 @@ _PRODUCT_KW = [
     "приложени", "аналог", "конкурент", "цена", "отзыв",
     "best", "top", "comparison", "tools for",
     "app store", "play store", "ios", "android",
+    "solopreneur", "indiehacker", "bootstrapped", "mvp",
 ]
 _REFERENCE_KW = [
     "what is", "definition", "meaning", "wikipedia", "history of",
@@ -55,6 +56,12 @@ _NEWS_KW = [
     "trend", "2025", "2026",
     "новост", "последн", "обновлен", "запуст", "тренд",
 ]
+_AI_KW = [
+    "huggingface", "model", "llm", "gpt", "claude", "gemini", "ollama",
+    "fine-tune", "finetune", "embedding", "rag", "vector",
+    "ai agent", "ai tool", "langchain", "llamaindex",
+    "нейросет", "модел", "ии агент",
+]
 
 _CATEGORIES = {
     "academic": (_ACADEMIC_KW, ENGINES_ACADEMIC),
@@ -62,6 +69,7 @@ _CATEGORIES = {
     "product": (_PRODUCT_KW, ENGINES_PRODUCT),
     "reference": (_REFERENCE_KW, ENGINES_REFERENCE),
     "news": (_NEWS_KW, ENGINES_NEWS),
+    "ai": (_AI_KW, ENGINES_AI),
 }
 
 
@@ -71,14 +79,22 @@ ENGINE_CATEGORIES: dict[str, str] = {
     "google": "general",
     "duckduckgo": "general",
     "brave": "general",
+    "mojeek": "general",
+    "stract": "general",
+    "marginalia": "general",
+    "crowdview": "general",
     "wikipedia": "general",
     "wikidata": "general",
     "google news": "news",
     "reddit": "social media",
     "reddit api": "social media",
     "hackernews": "social media",
+    "lobste.rs": "it",
     "github": "it",
     "stackoverflow": "it",
+    "huggingface": "it",
+    "huggingface datasets": "it",
+    "mdn": "it",
     "arxiv": "science",
     "google scholar": "science",
     "youtube": "videos",
