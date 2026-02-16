@@ -140,6 +140,44 @@ async def fetch_raw_content(
         return None
 
 
+_GITHUB_STOP_WORDS = {
+    "library", "libraries", "framework", "frameworks", "tool", "tools",
+    "package", "packages", "module", "modules", "api", "sdk", "cli",
+    "python", "javascript", "typescript", "rust", "go", "java", "ruby",
+    "nodejs", "node", "best", "top", "good", "awesome", "list",
+    "github", "repo", "repository", "open", "source", "open-source",
+    "for", "with", "and", "the", "using", "how", "what", "find",
+    "a", "an", "in", "on", "of", "to", "is", "are", "from",
+    "библиотек", "инструмент", "фреймворк", "пакет", "лучший",
+}
+_GITHUB_MAX_WORDS = 3
+
+
+def _trim_query_for_github(query: str, engines: str | None) -> str:
+    """Trim query to 3 keywords when GitHub engine is used.
+
+    GitHub search API returns 0 results for queries with 4+ words.
+    We strip stop words and keep the most specific terms.
+    """
+    if not engines:
+        return query
+    engine_list = [e.strip() for e in engines.split(",")]
+    if "github" not in engine_list:
+        return query
+    words = query.split()
+    if len(words) <= _GITHUB_MAX_WORDS:
+        return query
+    # Keep words that are not stop words
+    keywords = [w for w in words if w.lower() not in _GITHUB_STOP_WORDS]
+    # If all words were stop words, fall back to original first 3
+    if not keywords:
+        keywords = words[:_GITHUB_MAX_WORDS]
+    trimmed = " ".join(keywords[:_GITHUB_MAX_WORDS])
+    if trimmed != query:
+        logger.info(f"GitHub query trimmed: '{query}' -> '{trimmed}'")
+    return trimmed
+
+
 def _rewrite_reddit_to_google(query: str, engines: str | None) -> tuple[str, str | None]:
     """If 'reddit' is requested as engine, use Google with site:reddit.com instead.
 
@@ -168,6 +206,8 @@ async def perform_search_with_retry(
 
     # Rewrite reddit engine to google+site:reddit.com for better results
     query, user_engines = _rewrite_reddit_to_google(query, user_engines)
+    # Trim long queries for GitHub (API returns 0 results for 4+ words)
+    query = _trim_query_for_github(query, user_engines)
 
     for attempt in range(max_retries):
         # Выбираем движки для текущей попытки
@@ -258,6 +298,8 @@ async def perform_simple_search(query: str, user_engines: str | None = None) -> 
 
     # Rewrite reddit engine to google+site:reddit.com for better results
     query, user_engines = _rewrite_reddit_to_google(query, user_engines)
+    # Trim long queries for GitHub (API returns 0 results for 4+ words)
+    query = _trim_query_for_github(query, user_engines)
 
     # Выбираем движки: пользовательские или умный выбор
     engines = user_engines if user_engines else get_smart_engines(query)
