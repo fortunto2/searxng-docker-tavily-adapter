@@ -51,6 +51,18 @@ engines:
   - name: reddit
     disabled: false
     shortcut: re
+  # Reddit OAuth API — requires credentials from https://www.reddit.com/prefs/apps/
+  # Old (pre-Nov 2025) keys are grandfathered. New keys require manual approval.
+  - name: reddit api
+    engine: reddit_api
+    disabled: false
+    shortcut: ra
+    client_id: "YOUR_REDDIT_CLIENT_ID"
+    client_secret: "YOUR_REDDIT_CLIENT_SECRET"
+    # Reddit OAuth: 1000 req / 10 min. Keep 90/min = 900/10min with buffer.
+    rate_limit:
+      - max_requests: 90
+        interval: 60
   - name: hacker news
     disabled: false
     shortcut: hn

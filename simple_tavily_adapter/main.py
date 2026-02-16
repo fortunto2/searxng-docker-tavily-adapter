@@ -178,22 +178,23 @@ def _trim_query_for_github(query: str, engines: str | None) -> str:
     return trimmed
 
 
-def _rewrite_reddit_to_google(query: str, engines: str | None) -> tuple[str, str | None]:
-    """If 'reddit' is requested as engine, use Google with site:reddit.com instead.
+def _rewrite_reddit_engines(query: str, engines: str | None) -> tuple[str, str | None]:
+    """Expand 'reddit' engine to use both PullPush and OAuth API engines.
 
-    PullPush API (SearXNG reddit engine) returns SEO spam with poor relevance.
-    Google site:reddit.com produces much better Reddit results.
+    When user requests 'reddit', we add 'reddit_api' (OAuth) alongside it.
+    Also add Google site:reddit.com as extra source for better coverage.
     """
     if not engines:
         return query, engines
     engine_list = [e.strip() for e in engines.split(",")]
     if "reddit" not in engine_list:
         return query, engines
-    # Remove reddit, add google if not present
-    engine_list = [e for e in engine_list if e != "reddit"]
+    # Add reddit api (OAuth) if not already present
+    if "reddit api" not in engine_list:
+        engine_list.append("reddit api")
+    # Add Google site:reddit.com for extra coverage
     if "google" not in engine_list:
-        engine_list.insert(0, "google")
-    # Prepend site:reddit.com to query (avoid duplicating)
+        engine_list.append("google")
     if "site:reddit.com" not in query:
         query = f"site:reddit.com {query}"
     return query, ",".join(engine_list)
@@ -204,8 +205,8 @@ async def perform_search_with_retry(
 ) -> dict:
     """Выполняет поиск с повторными попытками и разными движками при капче"""
 
-    # Rewrite reddit engine to google+site:reddit.com for better results
-    query, user_engines = _rewrite_reddit_to_google(query, user_engines)
+    # Expand reddit to use PullPush + OAuth API + Google site:reddit.com
+    query, user_engines = _rewrite_reddit_engines(query, user_engines)
     # Trim long queries for GitHub (API returns 0 results for 4+ words)
     query = _trim_query_for_github(query, user_engines)
 
@@ -296,8 +297,8 @@ async def perform_search_with_retry(
 async def perform_simple_search(query: str, user_engines: str | None = None) -> dict:
     """Простой поиск без anti-captcha логики (старое поведение)"""
 
-    # Rewrite reddit engine to google+site:reddit.com for better results
-    query, user_engines = _rewrite_reddit_to_google(query, user_engines)
+    # Expand reddit to use PullPush + OAuth API + Google site:reddit.com
+    query, user_engines = _rewrite_reddit_engines(query, user_engines)
     # Trim long queries for GitHub (API returns 0 results for 4+ words)
     query = _trim_query_for_github(query, user_engines)
 

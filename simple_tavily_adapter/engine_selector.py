@@ -75,6 +75,7 @@ ENGINE_CATEGORIES: dict[str, str] = {
     "wikidata": "general",
     "google news": "news",
     "reddit": "social media",
+    "reddit api": "social media",
     "hacker news": "social media",
     "github": "it",
     "stackoverflow": "it",
