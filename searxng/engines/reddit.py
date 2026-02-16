@@ -22,6 +22,8 @@ about = {
 # engine dependent config
 categories = ['social media']
 page_size = 25
+# Minimum score threshold — filters out spam bots (score=1, 0 comments)
+min_score = 3
 
 # PullPush API
 base_url = 'https://www.reddit.com'
@@ -34,6 +36,7 @@ def request(query, params):
         'size': page_size,
         'sort': 'score',
         'order': 'desc',
+        'score': f'>{min_score}',
     })
     params['url'] = search_url.format(query=query)
     return params
@@ -51,6 +54,12 @@ def response(resp):
     posts = search_results.get('data', [])
 
     for post in posts:
+        # Skip spam: low-score posts with zero engagement
+        score = post.get('score', 0)
+        num_comments = post.get('num_comments', 0)
+        if score < 2 and num_comments == 0:
+            continue
+
         permalink = post.get('permalink', '')
         url = f'{base_url}{permalink}' if permalink else ''
         title = post.get('title', '')

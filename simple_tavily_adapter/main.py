@@ -45,10 +45,10 @@ USER_AGENTS = [
 
 # Fallback engine lists for retry logic (when primary engines fail/captcha)
 ENGINE_FALLBACKS = [
-    "google,duckduckgo,brave,reddit",       # Primary: broad web search
-    "google,brave,reddit,hacker news",       # Retry: tech-friendly mix
-    "duckduckgo,brave,wikipedia,reddit",     # Retry: alternative combo
-    "google,duckduckgo,wikipedia,wikidata",  # Retry: reference-heavy
+    "google,duckduckgo,brave",              # Primary: broad web search
+    "google,brave,wikipedia",               # Retry: alternative mix
+    "duckduckgo,brave,wikipedia",           # Retry: alternative combo
+    "google,duckduckgo,wikipedia,wikidata", # Retry: reference-heavy
 ]
 
 
@@ -140,10 +140,34 @@ async def fetch_raw_content(
         return None
 
 
+def _rewrite_reddit_to_google(query: str, engines: str | None) -> tuple[str, str | None]:
+    """If 'reddit' is requested as engine, use Google with site:reddit.com instead.
+
+    PullPush API (SearXNG reddit engine) returns SEO spam with poor relevance.
+    Google site:reddit.com produces much better Reddit results.
+    """
+    if not engines:
+        return query, engines
+    engine_list = [e.strip() for e in engines.split(",")]
+    if "reddit" not in engine_list:
+        return query, engines
+    # Remove reddit, add google if not present
+    engine_list = [e for e in engine_list if e != "reddit"]
+    if "google" not in engine_list:
+        engine_list.insert(0, "google")
+    # Prepend site:reddit.com to query (avoid duplicating)
+    if "site:reddit.com" not in query:
+        query = f"site:reddit.com {query}"
+    return query, ",".join(engine_list)
+
+
 async def perform_search_with_retry(
     query: str, max_results: int, max_retries: int = 3, user_engines: str | None = None
 ) -> dict:
     """Выполняет поиск с повторными попытками и разными движками при капче"""
+
+    # Rewrite reddit engine to google+site:reddit.com for better results
+    query, user_engines = _rewrite_reddit_to_google(query, user_engines)
 
     for attempt in range(max_retries):
         # Выбираем движки для текущей попытки
@@ -231,7 +255,10 @@ async def perform_search_with_retry(
 
 async def perform_simple_search(query: str, user_engines: str | None = None) -> dict:
     """Простой поиск без anti-captcha логики (старое поведение)"""
-    
+
+    # Rewrite reddit engine to google+site:reddit.com for better results
+    query, user_engines = _rewrite_reddit_to_google(query, user_engines)
+
     # Выбираем движки: пользовательские или умный выбор
     engines = user_engines if user_engines else get_smart_engines(query)
     
