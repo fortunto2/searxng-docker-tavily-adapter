@@ -63,9 +63,8 @@ engines:
     rate_limit:
       - max_requests: 90
         interval: 60
-  - name: hacker news
+  - name: hackernews
     disabled: false
-    shortcut: hn
   - name: lemmy communities
     disabled: false
     shortcut: lmc
@@ -86,9 +85,8 @@ engines:
   - name: pypi
     disabled: false
     shortcut: pypi
-  - name: dockerhub
+  - name: docker hub
     disabled: false
-    shortcut: dh
 
   # === App Stores (used by smart selector for mobile/product queries) ===
   - name: google play apps

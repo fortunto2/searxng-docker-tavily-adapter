@@ -76,7 +76,7 @@ ENGINE_CATEGORIES: dict[str, str] = {
     "google news": "news",
     "reddit": "social media",
     "reddit api": "social media",
-    "hacker news": "social media",
+    "hackernews": "social media",
     "github": "it",
     "stackoverflow": "it",
     "arxiv": "science",
