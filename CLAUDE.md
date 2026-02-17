@@ -8,6 +8,7 @@ This is a **SearXNG Docker Tavily Adapter** - a free Tavily API replacement usin
 
 - **SearXNG** (port 8999) - Meta-search engine that aggregates results from Google, DuckDuckGo, Brave, etc.
 - **Tavily Adapter** (port 8000) - FastAPI service that provides Tavily-compatible API interface
+- **Solograph Search** (port 8002) - Semantic vector search over ProductHunt (26k+ products, FalkorDB)
 - **Redis/Valkey** - Caching layer for SearXNG
 - **Unified Configuration** - Single `config.yaml` file configures all services
 
@@ -15,8 +16,12 @@ This is a **SearXNG Docker Tavily Adapter** - a free Tavily API replacement usin
 
 - `simple_tavily_adapter/` - FastAPI adapter service (Python)
   - `main.py` - FastAPI application with `/search` endpoint
-  - `tavily_client.py` - Drop-in replacement for Tavily Python client  
+  - `tavily_client.py` - Drop-in replacement for Tavily Python client
   - `config_loader.py` - YAML config parsing
+- `searxng/engines/` - Custom SearXNG engines
+  - `sources_local.py` - Generic engine for Solograph vector search (ProductHunt, YouTube, etc.)
+  - `reddit.py` - PullPush backend (fixes Reddit 403)
+  - `reddit_api.py` - Reddit OAuth API engine
 - `docker-compose.yaml` - Multi-service orchestration
 - `config.yaml` - Unified configuration for SearXNG + adapter
 - `Caddyfile` - Reverse proxy configuration
