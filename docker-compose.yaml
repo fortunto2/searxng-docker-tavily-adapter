@@ -28,9 +28,12 @@ services:
       - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro  # Bot detection конфигурация
       - ./searxng/engines/reddit.py:/usr/local/searxng/searx/engines/reddit.py:ro  # PullPush backend (fixes Reddit 403)
       - ./searxng/engines/reddit_api.py:/usr/local/searxng/searx/engines/reddit_api.py:ro  # Reddit OAuth API
+      - ./searxng/engines/sources_local.py:/usr/local/searxng/searx/engines/sources_local.py:ro  # Solograph vector search
       - ./searxng/entrypoint-patch.sh:/usr/local/bin/entrypoint-patch.sh:ro
       - searxng-data:/var/cache/searxng:rw
     entrypoint: ["/usr/local/bin/entrypoint-patch.sh"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - SEARXNG_BASE_URL=http://localhost:8999/
       - BIND_ADDRESS=[::]:8080
@@ -83,6 +86,27 @@ services:
     profiles:
       - cloudflare
 
+
+  solograph-search:
+    build:
+      context: /home/rustam/solograph
+      dockerfile: Dockerfile.search
+    container_name: solograph-search
+    restart: unless-stopped
+    networks:
+      - searxng
+    ports:
+      - "8002:8002"
+    volumes:
+      - /home/rustam/.solo/sources:/root/.solo/sources
+    environment:
+      - SOLOGRAPH_SEARCH_PORT=8002
+      - SOURCES_ROOT=/root/.solo/sources
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
 
 networks:
   searxng:
