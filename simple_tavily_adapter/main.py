@@ -551,15 +551,34 @@ async def search(request: SearchRequest) -> dict[str, Any]:
         if entry
     ]
 
+    # SearXNG's other two output channels. Some engines write only there, so a
+    # response that carries `results` alone silently loses them: wikipedia's
+    # article text arrives as an infobox, and `currency` answers with
+    # "100.0 EUR = 116.77 USD" and no result at all.
+    answers = [a for a in (str(x.get("answer") or "") if isinstance(x, dict) else str(x)
+                           for x in (searxng_data.get("answers") or [])) if a]
+    infoboxes = [
+        {
+            k: v
+            for k, v in ib.items()
+            if k in ("infobox", "content", "engine", "id", "img_src", "urls", "attributes")
+        }
+        for ib in (searxng_data.get("infoboxes") or [])
+        if isinstance(ib, dict)
+    ]
+
     response = TavilyResponse(
         query=request.query,
         follow_up_questions=None,
-        answer=None,
+        # Tavily's own `answer` field is the natural home for a direct answer.
+        answer=answers[0] if answers else None,
         images=[],
         results=results,
         response_time=response_time,
         request_id=request_id,
         unresponsive_engines=unresponsive,
+        answers=answers,
+        infoboxes=infoboxes,
     )
 
     logger.info(f"Search completed: {len(results)} results in {response_time:.2f}s")

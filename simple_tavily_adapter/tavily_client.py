@@ -37,6 +37,13 @@ class TavilyResponse(BaseModel):
     # it an all-suspended engine set returns [] and reads as "nothing exists"
     # rather than "these engines are banned right now".
     unresponsive_engines: list[list[str]] = []
+    # SearXNG answers on four channels and `results` is only one of them. Several
+    # engines write exclusively to the others and therefore looked broken:
+    # wikipedia ships as display_type ["infobox"], and `currency` returns
+    # "100.0 EUR = 116.77 USD" as an answer with no result at all. Both are
+    # useful, so both are carried through.
+    answers: list[str] = []
+    infoboxes: list[dict[str, Any]] = []
 
 
 class TavilyClient:

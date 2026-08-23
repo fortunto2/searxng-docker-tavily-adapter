@@ -109,8 +109,14 @@ engines:
   - name: npm
     disabled: false
     shortcut: npm
+  # pypi.org/search now serves a Fastly bot challenge to anything that is not a
+  # real browser — HTTP 200, 3 KB, <title>Client Challenge</title>, zero
+  # package-snippet nodes for the engine's XPath to find. So this engine cannot
+  # answer from a script at all, and left enabled it returns nothing silently.
+  # Disabled deliberately; use `npm`, `github`, or a browser for package search.
   - name: pypi
-    disabled: false
+    engine: pypi
+    disabled: true
     shortcut: pypi
   - name: docker hub
     disabled: false
@@ -148,9 +154,14 @@ engines:
   - name: google scholar
     disabled: false
     shortcut: gs
+  # Upstream ships wikipedia as display_type: ["infobox"], so its answer lands in
+  # the response's `infoboxes` and never in `results` — which reads as a broken
+  # engine. Adding "list" puts the articles in the result list as well.
   - name: wikipedia
+    engine: wikipedia
     disabled: false
     shortcut: wiki
+    display_type: ["infobox", "list"]
   - name: wikidata
     engine: wikidata
     disabled: false
@@ -180,8 +191,10 @@ engines:
     filter_name: ""
 
   # === Forums & Discussions ===
-  - name: crowdview
-    disabled: false
+  # crowdview has no module in the image and no entry upstream any more, so this
+  # name registers with nothing behind it and queries fall through to the default
+  # engines — the same trap as stract and reddit. Left as a note, not a config line.
+  #  - name: crowdview
   - name: lobste.rs
     disabled: false
 

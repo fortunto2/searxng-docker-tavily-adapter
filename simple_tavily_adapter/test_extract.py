@@ -267,3 +267,33 @@ def test_unresponsive_engines_defaults_to_empty():
 
     d = TavilyResponse(query="q", results=[], response_time=0.1, request_id="x").model_dump()
     assert d["unresponsive_engines"] == []
+
+
+# ---------- SearXNG's other output channels ----------
+# `results` is one of four. Engines that write only to `answers` or `infoboxes`
+# looked broken until the response carried them: wikipedia ships as
+# display_type ["infobox"], and `currency` answers with no result at all.
+
+def test_response_carries_answers_and_infoboxes():
+    from tavily_client import TavilyResponse
+
+    d = TavilyResponse(
+        query="100 EUR in USD",
+        results=[],
+        response_time=0.1,
+        request_id="x",
+        answer="100.0 EUR = 116.75 USD",
+        answers=["100.0 EUR = 116.75 USD"],
+        infoboxes=[{"infobox": "Beat detection", "content": "In signal analysis..."}],
+    ).model_dump()
+
+    assert d["answer"] == "100.0 EUR = 116.75 USD"
+    assert d["answers"] == ["100.0 EUR = 116.75 USD"]
+    assert d["infoboxes"][0]["infobox"] == "Beat detection"
+
+
+def test_both_channels_default_to_empty():
+    from tavily_client import TavilyResponse
+
+    d = TavilyResponse(query="q", results=[], response_time=0.1, request_id="x").model_dump()
+    assert d["answers"] == [] and d["infoboxes"] == []

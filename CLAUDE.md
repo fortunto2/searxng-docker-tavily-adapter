@@ -157,10 +157,19 @@ results came from that engine, checked by the per-result engine label.
 | `mojeek` | access denied | |
 | `marginalia` | rate-limited | The shared `public` key. Email contact@marginalia-search.com for a free one |
 | `github` | inconsistent | Good on "obsidian sync plugin", returned rustdesk and ansible for "remotion". The adapter trims to 3 keywords because the API returns 0 for 4+ |
-| `pypi` | **broken** | Returns nothing on any query. Registered and enabled |
-| `wikipedia` | **broken** | Same |
+| `pypi` | **disabled** | pypi.org/search serves a Fastly bot challenge to anything that is not a browser: HTTP 200, 3 KB, `<title>Client Challenge</title>`, no `package-snippet` nodes. Cannot answer from a script |
+| `wikipedia` | ok | Was not broken: upstream ships it as `display_type: ["infobox"]`, so its answer arrived in `infoboxes` and never in `results`. Fixed by adding `list` |
 | `wikidata` | **broken** | Registers, then its processor fails to init: HTTP 403 from query.wikidata.org's SPARQL endpoint |
-| `crowdview`, `currency` | empty | No result on an apt query |
+| `currency` | ok | Writes to `answers`, not `results`: "100.0 EUR = 116.75 USD" |
+| `crowdview` | **removed** | No module in the image and no upstream entry — a name with nothing behind it |
+
+**SearXNG answers on four channels and `results` is one of them.** The others are
+`answers`, `infoboxes` and `suggestions`, and several engines write only there —
+which is what made them look broken. Wikipedia's article text is an infobox;
+`currency` returns a conversion as an answer with no result at all. The adapter
+now carries `answers` and `infoboxes` through, and puts the first answer in
+Tavily's own `answer` field. Before assuming an engine is dead, print every
+non-empty key of the response, not just the result count.
 
 **Do not pass `categories` alongside `engines` to "help" a quiet engine.** It looks
 like a narrowing filter and is the opposite: it ADDS every engine in the category
