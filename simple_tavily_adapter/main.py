@@ -270,25 +270,24 @@ def _trim_query_for_github(query: str, engines: str | None) -> str:
 
 
 def _rewrite_reddit_engines(query: str, engines: str | None) -> tuple[str, str | None]:
-    """Expand 'reddit' engine to use both PullPush and OAuth API engines.
+    """Pass a reddit request through untouched. Kept as the seam, not as a rewrite.
 
-    When user requests 'reddit', we add 'reddit_api' (OAuth) alongside it.
-    Also add Google site:reddit.com as extra source for better coverage.
+    This used to widen `engines=reddit` in two ways, and both destroyed the request:
+
+    - It appended `reddit api`, the OAuth engine. Without credentials that engine
+      raises HTTP 401 on every call, and SearXNG runs an explicitly named engine
+      even when the config disables it, so every reddit query carried a guaranteed
+      crash.
+    - It prepended `site:reddit.com` to the query. That is a Google operator, but
+      the reddit engine is PullPush, a keyword API over titles and selftext, so it
+      searched Reddit for the literal string "site:reddit.com" and matched nothing.
+      With Google CAPTCHA-suspended, which is its normal state here, the whole
+      query returned zero.
+
+    For Google-scoped Reddit, ask for it explicitly: engines="google" with
+    site:reddit.com in the query. That keeps each engine's query in its own syntax.
     """
-    if not engines:
-        return query, engines
-    engine_list = [e.strip() for e in engines.split(",")]
-    if "reddit" not in engine_list:
-        return query, engines
-    # Add reddit api (OAuth) if not already present
-    if "reddit api" not in engine_list:
-        engine_list.append("reddit api")
-    # Add Google site:reddit.com for extra coverage
-    if "google" not in engine_list:
-        engine_list.append("google")
-    if "site:reddit.com" not in query:
-        query = f"site:reddit.com {query}"
-    return query, ",".join(engine_list)
+    return query, engines
 
 
 def _all_requested_unresponsive(engines: str, data: dict) -> bool:

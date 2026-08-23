@@ -60,7 +60,13 @@ engines:
     disabled: true       # Often blocked
 
   # === Social & Forums ===
+  # `engine: reddit` is REQUIRED, not decoration. Upstream SearXNG dropped its
+  # built-in reddit engine (Reddit's 403 crackdown), so with use_default_settings
+  # there is nothing to override: without an explicit engine key SearXNG silently
+  # drops this entry and the mounted PullPush searxng/engines/reddit.py never loads.
+  # Symptom was `engines=reddit` returning google cse results instead.
   - name: reddit
+    engine: reddit
     disabled: false
     shortcut: re
   # Reddit OAuth API — requires credentials from https://www.reddit.com/prefs/apps/
