@@ -31,6 +31,16 @@ search_url = 'https://api.pullpush.io/reddit/submission/search?{query}'
 
 
 def request(query, params):
+    # PullPush has no relevance ranking. An unquoted multi-word query matches
+    # loosely and, sorted by score, returns the highest-scoring posts that share
+    # any common word — "organize home videos" came back with a desk lamp build
+    # and a PMP exam question. Quoted, the same query returns "I am looking for a
+    # system to organize home videos by people, events" and "Home movies in
+    # Jellyfin?". So quote it: for research, phrase precision beats recall, and
+    # without it this engine is not usable at all.
+    if ' ' in query.strip() and not (query.startswith('"') and query.endswith('"')):
+        query = f'"{query}"'
+
     query = urlencode({
         'q': query,
         'size': page_size,
@@ -78,7 +88,14 @@ def response(resp):
             params['template'] = 'images.html'
             img_results.append(params)
         else:
-            created_utc = post.get('created_utc', 0)
+            # PullPush returns created_utc as a number for most posts and as a
+            # string for some, and fromtimestamp raises TypeError on a string.
+            # Latent until queries started matching real posts.
+            created_utc = post.get('created_utc') or 0
+            try:
+                created_utc = float(created_utc)
+            except (TypeError, ValueError):
+                created_utc = 0
             if created_utc:
                 params['publishedDate'] = datetime.fromtimestamp(created_utc)
 

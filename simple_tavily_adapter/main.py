@@ -349,9 +349,16 @@ async def perform_search_with_retry(
             "language": "auto",
             "safesearch": 1,
         }
-        # Only add categories for auto-selected engines (smart routing).
-        # When user specifies engines explicitly, omit categories so SearXNG
-        # uses ONLY the specified engines without mixing in category defaults.
+        # Only add categories for auto-selected engines (smart routing). Do NOT
+        # add them for explicit engines: `categories` ADDS every engine in the
+        # category rather than narrowing to the named ones, and it then hides the
+        # fact that the engine you asked for returned nothing. Measured 23 Aug:
+        # engines=pypi + categories=packages returns 24 results and not one of
+        # them from pypi (lib.rs, docker hub, crates.io, pub.dev, pkg.go.dev),
+        # and engines=wikipedia + categories=general returns 20, all google cse.
+        # engines= alone is correct — engines="apple app store" returns 40, all
+        # from that engine. An engine that answers nothing on its own is broken,
+        # and should look broken.
         if not user_engines:
             searxng_params["categories"] = "general"
 

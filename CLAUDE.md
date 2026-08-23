@@ -128,6 +128,55 @@ advertise `Accept-Encoding: ... br`; without it aiohttp raises
 `fetch_raw_content` swallows exceptions, raw content came back empty for every
 brotli-serving site with no error anywhere.
 
+## Which engines actually work
+
+Every engine this config declares, probed 23 Aug with a research-shaped query,
+4 s apart so the probe did not trigger the limits it was measuring. `ok` means the
+results came from that engine, checked by the per-result engine label.
+
+| Engine | State | Note |
+|---|---|---|
+| `producthunt` | ok | 20, votes and comments. Best single source for "what shipped and did it land" |
+| `hackernews` | ok | 26, and it returns the **whole post body**. Best for pain-points. Needs short queries: 6 words returned nothing, 5 worked |
+| `apple app store` | ok | 40, with the full App Store description including the subscription terms |
+| `google play apps` | ok | 30 |
+| `reddit` (PullPush) | ok, with a catch | Must be quoted, see below. Rate-limits by IP after a few queries |
+| `arxiv` | ok | 10, full abstracts |
+| `google scholar` | ok | 10 |
+| `youtube` | ok | 19 titles, no descriptions. Useful as a demand proxy per topic |
+| `stackoverflow` | ok | 10 |
+| `lobste.rs` | ok | 20 |
+| `lemmy posts` / `lemmy communities` | ok | 10 each |
+| `huggingface` / `huggingface datasets` | ok | 26 / 8 |
+| `npm` | ok | 25 |
+| `docker hub` | ok | 10 |
+| `mdn` | ok | 10 |
+| `fdroid` | ok | 20 |
+| `brave` | ok when not banned | Recovers on its own; suspensions here last 2-10 min |
+| `google`, `duckduckgo`, `google news` | CAPTCHA most of the time | `google cse` carries general queries instead |
+| `mojeek` | access denied | |
+| `marginalia` | rate-limited | The shared `public` key. Email contact@marginalia-search.com for a free one |
+| `github` | inconsistent | Good on "obsidian sync plugin", returned rustdesk and ansible for "remotion". The adapter trims to 3 keywords because the API returns 0 for 4+ |
+| `pypi` | **broken** | Returns nothing on any query. Registered and enabled |
+| `wikipedia` | **broken** | Same |
+| `wikidata` | **broken** | Registers, then its processor fails to init: HTTP 403 from query.wikidata.org's SPARQL endpoint |
+| `crowdview`, `currency` | empty | No result on an apt query |
+
+**Do not pass `categories` alongside `engines` to "help" a quiet engine.** It looks
+like a narrowing filter and is the opposite: it ADDS every engine in the category
+and then hides the fact that the one you asked for said nothing. Measured:
+`engines=pypi&categories=packages` returns 24 results and not one from pypi
+(lib.rs, docker hub, crates.io, pub.dev, pkg.go.dev), and
+`engines=wikipedia&categories=general` returns 20, all from google cse.
+`engines=` alone is correct — `engines=apple app store` returns 40, all from that
+engine. An engine that answers nothing on its own is broken, and should look broken.
+
+**Reddit queries must be quoted, and the engine does it for you.** PullPush has no
+relevance ranking. Unquoted, `organize home videos` sorted by score returned a desk
+lamp build and a PMP exam question; quoted, the same query returns "I am looking
+for a system to organize home videos by people, events" and "Home movies in
+Jellyfin?". Phrase precision beats recall here — without it the engine is unusable.
+
 ## Reddit: every API path is closed, use a browser
 
 Checked 2026-08-23, all four:
