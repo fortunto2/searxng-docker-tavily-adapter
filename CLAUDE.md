@@ -15,7 +15,8 @@ This is a **SearXNG Docker Tavily Adapter** - a free Tavily API replacement usin
 ### Key Components
 
 - `simple_tavily_adapter/` - FastAPI adapter service (Python)
-  - `main.py` - FastAPI application with `/search` endpoint
+  - `main.py` - FastAPI application: `/search`, `/extract`, `/transcript`, `/health`
+  - `engine_selector.py` - smart engine routing per query type (ours, not upstream)
   - `tavily_client.py` - Drop-in replacement for Tavily Python client
   - `config_loader.py` - YAML config parsing
 - `searxng/engines/` - Custom SearXNG engines
@@ -80,6 +81,81 @@ openssl rand -hex 32
 - SearXNG config is at root level, Adapter config under `adapter:` section
 - Adapter connects to SearXNG via internal Docker network: `http://searxng:8080`
 
+## Endpoints
+
+| Endpoint | What |
+|---|---|
+| `POST /search` | Tavily-compatible search. `include_raw_content` scrapes each result |
+| `POST /extract` | One page as markdown. `size`: `s`=5k, `m`=10k, `l`=25k chars, `f`=full. Reports `source`: `negotiated` or `extracted` |
+| `GET /extract/{id}/{page}` | Page N of a `size=f` extraction (cached 30 min) |
+| `POST /transcript` | YouTube captions as text (ours, not upstream) |
+| `GET /health` | Health check |
+
+### Markdown content negotiation — tried before any conversion
+
+`/extract` and the `/search` scraper ask for `text/markdown` ahead of html. A site
+that implements negotiation then serves its own authored markdown, which beats any
+extraction and is far smaller: visayes.app returns 8.3k chars against 51 KB of HTML,
+and developers.cloudflare.com returns a more complete page than trafilatura recovers
+from its HTML (5332 vs 2635 chars). Confirmed working on visayes.app, rustman.org and
+developers.cloudflare.com.
+
+`served_markdown()` decides. `text/markdown` is taken at face value. `text/plain` is
+only trusted when `Vary` carries an `accept` token, because rustman.org negotiates but
+labels its markdown `text/plain` — and **`Vary` must be parsed as a token list, not by
+substring**: `Vary: Accept-Encoding` ships with nearly every gzip response and contains
+"accept", which would mark every plain-text file as markdown.
+
+The `/extract` response reports which path ran in `source`: `negotiated` or `extracted`.
+
+### Markdown conversion — two converters, picked per document
+
+`html_to_markdown()` tries trafilatura first and falls back to markdownify over an
+nh3-sanitized soup. This is not belt-and-braces, both cases happen:
+
+- trafilatura wins on articles. It drops nav, ads and footers by structure, which
+  stripping tags by name cannot do, and it keeps tables.
+- trafilatura's markdown writer degrades to flat text on small or atypical
+  documents: no headings, no bold, no links, no list bullets. Verified against a
+  10-line test page (`test_extract.py::test_small_document_keeps_markdown_formatting`).
+
+So trafilatura's output is accepted only when it actually contains markdown markers.
+Do not "simplify" this to a single converter.
+
+**`Brotli` is a required dependency, not an optional one.** The scrape headers
+advertise `Accept-Encoding: ... br`; without it aiohttp raises
+`ClientResponseError: Can not decode content-encoding: brotli`, and because
+`fetch_raw_content` swallows exceptions, raw content came back empty for every
+brotli-serving site with no error anywhere.
+
+## MCP server
+
+`searxng_mcp/` exposes `web_search`, `web_extract` and `youtube_transcript` over MCP.
+It depends on `mcp` and `httpx` and nothing else.
+
+Kept separate from the solograph MCP server on purpose, from two incidents: a broken
+import in solograph took all 16 of its tools down at once, search included, and
+solograph is registered per-project so sessions in other repos had no search at all.
+
+```bash
+uv run --project searxng_mcp searxng-mcp     # stdio
+```
+
+Register it as `searxng`, so tools resolve as `mcp__searxng__web_search`.
+
+## Upstream
+
+Fork of [vakovalskii/searcharvester](https://github.com/vakovalskii/searcharvester),
+which rewrote itself from scratch as Searcharvester 2.0 in April 2026. There is no
+shared git history with that rewrite, so no merge or cherry-pick path exists; changes
+move by hand. `/extract` was ported that way.
+
+Ours keeps what upstream dropped: `engine_selector.py`, the Reddit PullPush and OAuth
+engines, `sources_local.py` for solograph vector search, `/transcript`, and the curated
+30-engine config. Upstream's `/research` (Hermes multi-agent orchestrator) was
+deliberately not taken: it needs an LLM API key and a Hermes runtime to do what a
+coding agent already does.
+
 ## API Compatibility
 
 The adapter provides 100% Tavily API compatibility:
@@ -93,7 +169,9 @@ The adapter provides 100% Tavily API compatibility:
 When `include_raw_content: true`:
 1. SearXNG returns search results with URLs
 2. Adapter scrapes each URL in parallel
-3. HTML is cleaned and converted to text (max 2500 chars)
-4. Full content returned in `raw_content` field
+3. HTML goes through `html_to_markdown()` (see above)
+4. Content is truncated to `adapter.scraper.max_content_length` and returned in `raw_content`
 
 Scraping timeout and limits configured in `config.yaml` under `adapter.scraper`.
+For a single page read in full, use `POST /extract` instead: same conversion, but
+sized and paginated rather than truncated.

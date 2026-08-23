@@ -41,3 +41,6 @@ venv.bak/
 .env.local
 .env.production
 .env
+# Local machine-specific compose overrides
+docker-compose.override.yaml
+.venv/

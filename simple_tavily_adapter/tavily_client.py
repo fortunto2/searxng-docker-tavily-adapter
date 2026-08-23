@@ -32,6 +32,11 @@ class TavilyResponse(BaseModel):
     results: list[TavilyResult]
     response_time: float
     request_id: str
+    # Engines SearXNG could not reach for this query, as [name, reason] pairs.
+    # Additive, so Tavily clients that do not know the field still work. Without
+    # it an all-suspended engine set returns [] and reads as "nothing exists"
+    # rather than "these engines are banned right now".
+    unresponsive_engines: list[list[str]] = []
 
 
 class TavilyClient:

@@ -23,6 +23,18 @@ search:
     - csv
     - rss
 
+  # SearXNG defaults suspend an engine for 1 day after a CAPTCHA, 7 days after a
+  # Google reCAPTCHA and 15 days after a Cloudflare one. Those numbers assume a
+  # public instance being abused. On a single-user box a burst of 10 queries is
+  # normal traffic, so retry in minutes instead of losing Google for a week.
+  suspended_times:
+    SearxEngineAccessDenied: 300
+    SearxEngineCaptcha: 300
+    SearxEngineTooManyRequests: 120
+    cf_SearxEngineCaptcha: 600
+    cf_SearxEngineAccessDenied: 300
+    recaptcha_SearxEngineCaptcha: 600
+
 valkey:
   url: redis://redis:6379/0
 

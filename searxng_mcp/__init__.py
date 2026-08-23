@@ -1,0 +1,1 @@
+"""SearXNG MCP server package."""
