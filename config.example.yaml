@@ -59,6 +59,15 @@ engines:
   - name: startpage
     disabled: true       # Often blocked
 
+  # === Launches (idea research: what shipped, and how much traction it got) ===
+  - name: producthunt
+    engine: producthunt
+    disabled: false
+    shortcut: phunt
+    api_token: "YOUR_PRODUCT_HUNT_DEVELOPER_TOKEN"
+    # v2 has no free-text post search, so the engine filters a votes-ordered
+    # window client-side. Keep queries to 1-2 distinctive words.
+
   # === Social & Forums ===
   # `engine: reddit` is REQUIRED, not decoration. Upstream SearXNG dropped its
   # built-in reddit engine (Reddit's 403 crackdown), so with use_default_settings

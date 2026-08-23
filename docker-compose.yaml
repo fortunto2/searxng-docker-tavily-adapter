@@ -28,6 +28,7 @@ services:
       - ./searxng/engines/reddit.py:/usr/local/searxng/searx/engines/reddit.py:ro  # PullPush backend (fixes Reddit 403)
       - ./searxng/engines/reddit_api.py:/usr/local/searxng/searx/engines/reddit_api.py:ro  # Reddit OAuth API
       - ./searxng/engines/sources_local.py:/usr/local/searxng/searx/engines/sources_local.py:ro  # Solograph vector search
+      - ./searxng/engines/producthunt.py:/usr/local/searxng/searx/engines/producthunt.py:ro  # Product Hunt GraphQL v2
       - ./searxng/entrypoint-patch.sh:/usr/local/bin/entrypoint-patch.sh:ro
       - searxng-data:/var/cache/searxng:rw
     entrypoint: ["/usr/local/bin/entrypoint-patch.sh"]
