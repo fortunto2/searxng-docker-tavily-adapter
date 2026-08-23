@@ -128,6 +128,23 @@ advertise `Accept-Encoding: ... br`; without it aiohttp raises
 `fetch_raw_content` swallows exceptions, raw content came back empty for every
 brotli-serving site with no error anywhere.
 
+## Reddit: every API path is closed, use a browser
+
+Checked 2026-08-23, all four:
+
+| Path | State |
+|---|---|
+| `reddit` engine (PullPush) | Works when PullPush lets you in. Free community API, rate-limits by IP and returns 429 under any real use. Also 403s a `Python-urllib` User-Agent while accepting curl, a browser, or none |
+| `reddit.com/search.json` | 403, even from a residential IP. Reddit fingerprints, it is not just datacenter ranges |
+| `old.reddit.com/search` | 302 to a login page |
+| `reddit api` (OAuth) | 401 without credentials, and SearXNG runs an explicitly named engine even when the config disables it |
+
+What works is `www.reddit.com/search/?q=...` in a real browser (Playwright MCP),
+which returns results with no login. Pull the posts out of the DOM by matching
+`a[href*="/comments/"]` and reading `/r/(sub)/comments/(id)`. Use PullPush when it
+answers, since it gives score, comment count and selftext that the search page
+does not, and fall back to the browser.
+
 ## MCP server
 
 `searxng_mcp/` exposes `web_search`, `web_extract` and `youtube_transcript` over MCP.
