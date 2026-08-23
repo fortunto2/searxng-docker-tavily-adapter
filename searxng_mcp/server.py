@@ -72,6 +72,24 @@ async def web_search(
     engine was banned or timed out for this query. Read it before concluding that a
     zero-result answer means the subject does not exist.
 
+    It also carries "answers" and "infoboxes", because SearXNG replies on more than
+    one channel and some engines use only the others: engines="wikipedia" puts the
+    article's opening paragraph in infoboxes, and engines="currency" answers
+    "100.0 EUR = 116.75 USD" with no result at all. An empty "results" is not an
+    empty response — check those two before reporting nothing found.
+
+    Engines worth knowing, measured rather than assumed:
+      hackernews  — returns whole post bodies. Best for how people describe a pain.
+                    Keep the query short; six words returned nothing, five worked.
+      producthunt — launches with vote and comment counts, the demand signal.
+      apple app store / google play apps — full store listings, subscription terms
+                    included, which is the fastest read on a competitor's pricing.
+      reddit      — works, and the engine quotes multi-word queries for you because
+                    PullPush has no relevance ranking. Rate-limits by IP; when it
+                    does, read threads with a browser instead.
+      google, duckduckgo — usually CAPTCHA-suspended here. google cse carries
+                    general queries in their place.
+
     Args:
         query: Search query. For engines="reddit" keep it to 3 keywords or fewer,
             the Reddit backend returns nothing for longer ones.
