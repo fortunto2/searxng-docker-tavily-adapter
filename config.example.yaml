@@ -159,10 +159,25 @@ engines:
   # === Independent indexes (diversity, not Google/Bing clones) ===
   - name: mojeek
     disabled: false
-  - name: stract
-    disabled: false
+  # stract is gone: upstream deleted searx/engines/stract.py, so this entry can
+  # never load and only produced a boot error. Left as a note rather than a
+  # config line — a name with nothing behind it looks like a working engine.
+  #  - name: stract
+
+  # marginalia is present upstream but flagged `inactive: true` and needs an API
+  # key from https://about.marginalia-search.com/article/api/. `disabled: false`
+  # alone does not lift `inactive`, which is why it silently never registered.
   - name: marginalia
+    engine: marginalia
+    shortcut: mar
     disabled: false
+    inactive: false
+    # `public` is the documented shared key for experimentation
+    # (https://about.marginalia-search.com/article/api/). Shared rate limit across
+    # every consumer, and it cannot create custom filters — hence filter_name null.
+    # Email contact@marginalia-search.com for a free non-commercial key.
+    api_key: "public"
+    filter_name: ""
 
   # === Forums & Discussions ===
   - name: crowdview
