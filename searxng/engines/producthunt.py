@@ -12,6 +12,8 @@ set as `api_token` on the engine entry in config.yaml.
 import json
 from datetime import datetime
 
+from searx.exceptions import SearxEngineAPIException
+
 about = {
     "website": "https://www.producthunt.com/",
     "official_api_documentation": "https://api.producthunt.com/v2/docs",
@@ -112,7 +114,12 @@ def _item(node):
 def response(resp):
     data = json.loads(resp.text)
     if "errors" in data:
-        return []
+        # Returning [] here would make a bad api_token or a GraphQL error look like
+        # "no results" — the silent-loss failure the unresponsive_engines plumbing
+        # exists to kill. Raise so it lands there instead.
+        raise SearxEngineAPIException(
+            "; ".join(str(e.get("message", e)) for e in data["errors"])[:200]
+        )
     payload = data.get("data") or {}
 
     raw = ""

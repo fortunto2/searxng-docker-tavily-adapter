@@ -8,6 +8,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from fastapi.testclient import TestClient
+from tavily_client import TavilyResponse
 
 import main
 from main import (
@@ -19,7 +20,8 @@ from main import (
     app,
     fetch_raw_content,
     html_to_markdown,
-    served_markdown,
+    needs_html_conversion,
+    negotiated_markdown,
 )
 
 # A small document. trafilatura's markdown writer flattens these to plain text,
@@ -123,12 +125,7 @@ def test_extract_endpoint_caches_by_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_raw_content_markdown_over_http():
-    async def handler(request):
-        return web.Response(text=SMALL_HTML, content_type="text/html")
-
-    app_ = web.Application()
-    app_.router.add_get("/p", handler)
-    async with TestServer(app_) as server:
+    async with TestServer(_server(SMALL_HTML)) as server:
         url = f"http://localhost:{server.port}/p"
         async with aiohttp.ClientSession() as session:
             markdown = await fetch_raw_content(session, url, "markdown")
@@ -140,12 +137,7 @@ async def test_fetch_raw_content_markdown_over_http():
 
 @pytest.mark.asyncio
 async def test_fetch_raw_content_returns_none_on_http_error():
-    async def handler(request):
-        return web.Response(status=503, text="nope")
-
-    app_ = web.Application()
-    app_.router.add_get("/p", handler)
-    async with TestServer(app_) as server:
+    async with TestServer(_server("nope", status=503)) as server:
         async with aiohttp.ClientSession() as session:
             assert await fetch_raw_content(
                 session, f"http://localhost:{server.port}/p", "markdown"
@@ -160,36 +152,57 @@ MARKDOWN_BODY = "# Native Title\n\nAuthored paragraph, not extracted.\n"
 
 
 @pytest.mark.parametrize(
-    "content_type,vary,expected",
+    "content_type,expected",
     [
-        ("text/markdown; charset=utf-8", "Accept", True),
-        ("text/markdown", "", True),
-        ("text/x-markdown", "", True),
-        # rustman.org negotiates but labels the body text/plain
-        ("text/plain; charset=utf-8", "Accept", True),
-        # Vary: Accept-Encoding ships with almost every gzip response
-        ("text/plain; charset=utf-8", "Accept-Encoding", False),
-        ("text/plain", "Accept-Encoding, Accept", True),
-        ("text/plain", "accept-encoding,accept-language", False),
-        ("text/plain", "*", True),
-        # a bare .txt with no negotiation must not be taken for markdown
-        ("text/plain", "", False),
-        ("text/html; charset=utf-8", "Accept", False),
-        ("", "", False),
+        ("text/html; charset=utf-8", True),
+        ("application/xhtml+xml", True),
+        ("application/xml", True),
+        # Already text. Nothing to convert, whoever labelled it and however they
+        # negotiated — which is why no Vary check is needed to get this right.
+        ("text/markdown; charset=utf-8", False),
+        ("text/x-markdown", False),
+        ("text/plain; charset=utf-8", False),
+        ("text/plain", False),
+        ("", False),
     ],
 )
-def test_served_markdown_detection(content_type, vary, expected):
-    assert served_markdown(content_type, vary) is expected
+def test_only_markup_needs_converting(content_type, expected):
+    assert needs_html_conversion(content_type) is expected
 
 
-def _md_server(content_type, vary, body=MARKDOWN_BODY):
+@pytest.mark.parametrize(
+    "content_type,expected",
+    [
+        ("text/markdown; charset=utf-8", True),
+        ("text/x-markdown", True),
+        # rustman.org negotiates markdown and labels it text/plain. It still passes
+        # through unconverted; it just is not *called* negotiated, and the label is
+        # cosmetic so being wrong here costs nothing.
+        ("text/plain; charset=utf-8", False),
+        ("text/html", False),
+        ("", False),
+    ],
+)
+def test_negotiated_label_is_cosmetic(content_type, expected):
+    assert negotiated_markdown(content_type) is expected
+
+
+def _server(body, content_type="text/html", vary="", status=200):
+    """One app builder for every case in this file."""
+
     async def handler(request):
         headers = {"Vary": vary} if vary else {}
+        if status != 200:
+            return web.Response(status=status, text=body)
         return web.Response(text=body, headers=headers, content_type=content_type)
 
     app_ = web.Application()
     app_.router.add_get("/p", handler)
     return app_
+
+
+def _md_server(content_type, vary, body=MARKDOWN_BODY):
+    return _server(body, content_type=content_type, vary=vary)
 
 
 @pytest.mark.asyncio
@@ -202,28 +215,25 @@ async def test_extract_uses_negotiated_markdown_verbatim():
 
 
 @pytest.mark.asyncio
-async def test_extract_trusts_text_plain_only_when_it_varies_on_accept():
-    """rustman.org's shape: negotiated markdown labelled text/plain."""
+async def test_text_plain_passes_through_and_is_not_called_negotiated():
+    """rustman.org's shape: negotiated markdown labelled text/plain. It must reach
+    the caller unconverted; only the cosmetic source label differs."""
     async with TestServer(_md_server("text/plain", "Accept")) as server:
         _, content, source = await _extract_url(f"http://localhost:{server.port}/p")
-    assert source == "negotiated"
     assert content == MARKDOWN_BODY
+    assert source == "extracted"
 
-    # Same body, no Vary — not trusted, so it goes down the HTML conversion path
-    # and is reported as extracted rather than as the site's own markdown.
+    # Same body with no Vary at all: still passed through verbatim, because the
+    # body is already text. Only the label differs.
     async with TestServer(_md_server("text/plain", "")) as server:
-        _, _, source = await _extract_url(f"http://localhost:{server.port}/p")
+        _, content, source = await _extract_url(f"http://localhost:{server.port}/p")
+    assert content == MARKDOWN_BODY
     assert source == "extracted"
 
 
 @pytest.mark.asyncio
 async def test_html_still_goes_through_extraction():
-    async def handler(request):
-        return web.Response(text=ARTICLE_HTML, content_type="text/html")
-
-    app_ = web.Application()
-    app_.router.add_get("/p", handler)
-    async with TestServer(app_) as server:
+    async with TestServer(_server(ARTICLE_HTML)) as server:
         title, content, source = await _extract_url(f"http://localhost:{server.port}/p")
     assert source == "extracted"
     assert "Paragraph 7 explains" in content
@@ -252,8 +262,6 @@ def test_source_is_reported_in_the_response():
 # wrong conclusion.
 
 def test_search_response_carries_unresponsive_engines():
-    from tavily_client import TavilyResponse
-
     r = TavilyResponse(
         query="q", results=[], response_time=0.1, request_id="x",
         unresponsive_engines=[["google", "Suspended: CAPTCHA"]],
@@ -263,8 +271,6 @@ def test_search_response_carries_unresponsive_engines():
 
 
 def test_unresponsive_engines_defaults_to_empty():
-    from tavily_client import TavilyResponse
-
     d = TavilyResponse(query="q", results=[], response_time=0.1, request_id="x").model_dump()
     assert d["unresponsive_engines"] == []
 
@@ -275,8 +281,6 @@ def test_unresponsive_engines_defaults_to_empty():
 # display_type ["infobox"], and `currency` answers with no result at all.
 
 def test_response_carries_answers_and_infoboxes():
-    from tavily_client import TavilyResponse
-
     d = TavilyResponse(
         query="100 EUR in USD",
         results=[],
@@ -293,7 +297,5 @@ def test_response_carries_answers_and_infoboxes():
 
 
 def test_both_channels_default_to_empty():
-    from tavily_client import TavilyResponse
-
     d = TavilyResponse(query="q", results=[], response_time=0.1, request_id="x").model_dump()
     assert d["answers"] == [] and d["infoboxes"] == []

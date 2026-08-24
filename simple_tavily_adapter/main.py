@@ -17,6 +17,7 @@ import os
 import random
 import time
 import uuid
+from collections import OrderedDict
 from typing import Any, Literal
 
 import aiohttp
@@ -28,7 +29,7 @@ from fastapi import FastAPI, HTTPException, Path
 from markdownify import markdownify as md
 from pydantic import BaseModel, Field
 
-from tavily_client import TavilyResponse, TavilyResult
+from tavily_client import TavilyResponse, TavilyResult, searxng_channels
 from config_loader import config
 from engine_selector import get_smart_engines
 
@@ -84,26 +85,22 @@ _ACCEPT_MARKDOWN_FIRST = (
     "application/xhtml+xml;q=0.8,*/*;q=0.7"
 )
 _MARKDOWN_TYPES = ("text/markdown", "text/x-markdown")
+# The only types that need converting. Everything else is already text and passes
+# through, which is what makes a Vary check unnecessary: rustman.org serves
+# negotiated markdown labelled text/plain, and a plain .txt needs no conversion
+# either, so both take the same correct path.
+_HTML_TYPES = ("text/html", "application/xhtml+xml", "application/xml")
 
 
-def served_markdown(content_type: str, vary: str) -> bool:
-    """True when the response body is already markdown, so no conversion is needed.
+def needs_html_conversion(content_type: str) -> bool:
+    """True when the body is markup we have to convert."""
+    return content_type.split(";")[0].strip().lower() in _HTML_TYPES
 
-    text/markdown is unambiguous. text/plain is only trusted when the response
-    also varies on Accept, which proves negotiation happened — rustman.org
-    negotiates but labels its markdown text/plain, while a bare .txt file would
-    otherwise be mistaken for markdown.
-    """
-    ct = content_type.split(";")[0].strip().lower()
-    if ct in _MARKDOWN_TYPES:
-        return True
-    if ct != "text/plain":
-        return False
-    # Vary is a token list and must be matched per token, not by substring:
-    # "Vary: Accept-Encoding" ships with almost every gzip response and contains
-    # "accept", which would mark every plain-text file as negotiated markdown.
-    tokens = {t.strip().lower() for t in vary.split(",")}
-    return "accept" in tokens or "*" in tokens
+
+def negotiated_markdown(content_type: str) -> bool:
+    """True when the site labelled its body markdown. Cosmetic — it only sets the
+    `source` field, where being wrong costs nothing."""
+    return content_type.split(";")[0].strip().lower() in _MARKDOWN_TYPES
 
 
 def scrape_headers() -> dict[str, str]:
@@ -187,45 +184,75 @@ def html_to_markdown(html: str, soup: BeautifulSoup | None = None) -> str | None
     return fallback or extracted
 
 
+class FetchFailed(Exception):
+    def __init__(self, status: int):
+        self.status = status
+        super().__init__(f"HTTP {status}")
+
+
+async def fetch_page(session: aiohttp.ClientSession, url: str) -> tuple[str, str]:
+    """Fetch one page, returning (body, content_type).
+
+    The one place that knows the headers, the timeout and the redirect policy, so a
+    change to negotiation or proxying cannot land in one caller and miss the other.
+    """
+    async with session.get(
+        url,
+        timeout=aiohttp.ClientTimeout(total=config.scraper_timeout),
+        headers=scrape_headers(),
+        allow_redirects=True,
+    ) as response:
+        if response.status != 200:
+            raise FetchFailed(response.status)
+        return await response.text(), response.headers.get("Content-Type", "")
+
+
+def first_heading(markdown: str) -> str:
+    """A markdown document's own title, from its first ATX heading."""
+    return next(
+        (ln[2:].strip() for ln in markdown.splitlines() if ln.startswith("# ")), ""
+    )
+
+
+def html_title(html: str) -> str:
+    """The <title> text, via lxml.
+
+    trafilatura's metadata reader returns the same field and also runs author, date
+    and sitename heuristics nobody here uses: measured at 343 ms against about 1 ms
+    for the line below, on a 300 KB page.
+    """
+    try:
+        from lxml import html as lxml_html
+
+        return (lxml_html.fromstring(html).findtext(".//title") or "").strip()
+    except Exception:
+        return ""
+
+
 async def fetch_raw_content(
     session: aiohttp.ClientSession, url: str, content_format: str = "text"
 ) -> str | None:
     """Скрапит страницу и возвращает контент в указанном формате"""
     try:
-        async with session.get(
-            url,
-            timeout=aiohttp.ClientTimeout(total=config.scraper_timeout),
-            headers=scrape_headers(),
-            allow_redirects=True,
-        ) as response:
-            if response.status != 200:
-                return None
+        body, content_type = await fetch_page(session, url)
 
-            body = await response.text()
+        if not needs_html_conversion(content_type):
+            text = body
+        elif content_format == "markdown":
+            # No soup passed: html_to_markdown builds one only on its fallback, and
+            # building it eagerly costs nh3 plus a BeautifulSoup parse — measured at
+            # 65 ms per page — discarded whenever trafilatura succeeds.
+            text = await asyncio.to_thread(html_to_markdown, body)
+        else:
+            text = await asyncio.to_thread(
+                lambda: clean_soup(body).get_text(separator=" ", strip=True)
+            )
 
-            if served_markdown(
-                response.headers.get("content-type", ""),
-                response.headers.get("vary", ""),
-            ):
-                text = body
-                if len(text) > config.scraper_max_length:
-                    text = text[: config.scraper_max_length] + "..."
-                return text
-
-            html = body
-            soup = clean_soup(html)
-
-            if content_format == "markdown":
-                text = html_to_markdown(html, soup)
-            else:
-                # Берем простой текст
-                text = soup.get_text(separator=" ", strip=True)
-
-            # Обрезаем до настроенного размера
-            if len(text) > config.scraper_max_length:
-                text = text[: config.scraper_max_length] + "..."
-
-            return text
+        if not text:
+            return None
+        if len(text) > config.scraper_max_length:
+            text = text[: config.scraper_max_length] + "..."
+        return text
     except Exception as e:
         logger.warning(f"Error fetching content from {url}: {e}")
         return None
@@ -269,34 +296,13 @@ def _trim_query_for_github(query: str, engines: str | None) -> str:
     return trimmed
 
 
-def _rewrite_reddit_engines(query: str, engines: str | None) -> tuple[str, str | None]:
-    """Pass a reddit request through untouched. Kept as the seam, not as a rewrite.
-
-    This used to widen `engines=reddit` in two ways, and both destroyed the request:
-
-    - It appended `reddit api`, the OAuth engine. Without credentials that engine
-      raises HTTP 401 on every call, and SearXNG runs an explicitly named engine
-      even when the config disables it, so every reddit query carried a guaranteed
-      crash.
-    - It prepended `site:reddit.com` to the query. That is a Google operator, but
-      the reddit engine is PullPush, a keyword API over titles and selftext, so it
-      searched Reddit for the literal string "site:reddit.com" and matched nothing.
-      With Google CAPTCHA-suspended, which is its normal state here, the whole
-      query returned zero.
-
-    For Google-scoped Reddit, ask for it explicitly: engines="google" with
-    site:reddit.com in the query. That keeps each engine's query in its own syntax.
-    """
-    return query, engines
-
-
-def _all_requested_unresponsive(engines: str, data: dict) -> bool:
+def _all_requested_unresponsive(engines: str | None, data: dict) -> bool:
     """True when every engine asked for came back unresponsive.
 
     SearXNG names engines with spaces ("google cse", "lemmy posts"), so compare
     normalised names rather than tokens.
     """
-    requested = {e.strip().lower() for e in engines.split(",") if e.strip()}
+    requested = {e.strip().lower() for e in (engines or "").split(",") if e.strip()}
     if not requested:
         return False
     down = {
@@ -307,13 +313,39 @@ def _all_requested_unresponsive(engines: str, data: dict) -> bool:
     return requested.issubset(down)
 
 
+def searxng_params(query: str, engines: str, user_engines: str | None) -> dict:
+    """The request SearXNG gets. One builder, because the categories rule below is
+    subtle enough that two copies would diverge — and did, when only one copy
+    carried the explanation.
+
+    Do NOT add `categories` for explicit engines: it ADDS every engine in the
+    category rather than narrowing to the named ones, and then hides the fact that
+    the engine you asked for returned nothing. Measured 23 Aug 2026:
+    engines=pypi + categories=packages returns 24 results and not one of them from
+    pypi (lib.rs, docker hub, crates.io, pub.dev, pkg.go.dev), and
+    engines=wikipedia + categories=general returns 20, all google cse.
+    `engines=` alone is correct — engines="apple app store" returns 40, all from
+    that engine. An engine that answers nothing on its own is broken, and should
+    look broken.
+    """
+    params = {
+        "q": query,
+        "format": "json",
+        "engines": engines,
+        "pageno": 1,
+        "language": "auto",
+        "safesearch": 1,
+    }
+    if not user_engines:
+        params["categories"] = "general"
+    return params
+
+
 async def perform_search_with_retry(
     query: str, max_results: int, max_retries: int = 3, user_engines: str | None = None
 ) -> dict:
     """Выполняет поиск с повторными попытками и разными движками при капче"""
 
-    # Expand reddit to use PullPush + OAuth API + Google site:reddit.com
-    query, user_engines = _rewrite_reddit_engines(query, user_engines)
     # Trim long queries for GitHub (API returns 0 results for 4+ words)
     query = _trim_query_for_github(query, user_engines)
 
@@ -341,26 +373,7 @@ async def perform_search_with_retry(
         )
 
         # Формируем запрос к SearXNG
-        searxng_params = {
-            "q": query,
-            "format": "json",
-            "engines": engines,
-            "pageno": 1,
-            "language": "auto",
-            "safesearch": 1,
-        }
-        # Only add categories for auto-selected engines (smart routing). Do NOT
-        # add them for explicit engines: `categories` ADDS every engine in the
-        # category rather than narrowing to the named ones, and it then hides the
-        # fact that the engine you asked for returned nothing. Measured 23 Aug:
-        # engines=pypi + categories=packages returns 24 results and not one of
-        # them from pypi (lib.rs, docker hub, crates.io, pub.dev, pkg.go.dev),
-        # and engines=wikipedia + categories=general returns 20, all google cse.
-        # engines= alone is correct — engines="apple app store" returns 40, all
-        # from that engine. An engine that answers nothing on its own is broken,
-        # and should look broken.
-        if not user_engines:
-            searxng_params["categories"] = "general"
+        searxng_request = searxng_params(query, engines, user_engines)
 
         # Рандомизируем заголовки для обхода блокировок
         headers = {
@@ -390,7 +403,7 @@ async def perform_search_with_retry(
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{config.searxng_url}/search",
-                    data=searxng_params,
+                    data=searxng_request,
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as response:
@@ -403,16 +416,14 @@ async def perform_search_with_retry(
                             return data
 
                         logger.warning(f"No results on attempt {attempt + 1}")
-                        # Retrying a suspended engine is waiting for nothing: a
-                        # suspension lasts minutes, not the 1-3s of backoff here.
-                        # Only bail early when the caller pinned the engines, since
-                        # auto-routing has other engine sets left to try.
-                        if user_engines and _all_requested_unresponsive(
-                            engines, data
-                        ):
-                            logger.info(
-                                "Every requested engine is suspended, not retrying"
-                            )
+                        # A pinned engine set means every retry sends byte-identical
+                        # params, so a 200 with no results is the answer and the
+                        # remaining attempts are two sleeps and two round-trips that
+                        # cannot change it. Auto-routing is different: it has other
+                        # engine sets left to try.
+                        if user_engines:
+                            if _all_requested_unresponsive(user_engines, data):
+                                logger.info("Every requested engine is suspended")
                             return data
                     else:
                         logger.warning(
@@ -436,24 +447,13 @@ async def perform_search_with_retry(
 async def perform_simple_search(query: str, user_engines: str | None = None) -> dict:
     """Простой поиск без anti-captcha логики (старое поведение)"""
 
-    # Expand reddit to use PullPush + OAuth API + Google site:reddit.com
-    query, user_engines = _rewrite_reddit_engines(query, user_engines)
     # Trim long queries for GitHub (API returns 0 results for 4+ words)
     query = _trim_query_for_github(query, user_engines)
 
     # Выбираем движки: пользовательские или умный выбор
     engines = user_engines if user_engines else get_smart_engines(query)
     
-    searxng_params = {
-        "q": query,
-        "format": "json",
-        "engines": engines,
-        "pageno": 1,
-        "language": "auto",
-        "safesearch": 1,
-    }
-    if not user_engines:
-        searxng_params["categories"] = "general"
+    searxng_request = searxng_params(query, engines, user_engines)
 
     headers = {
         "X-Forwarded-For": "127.0.0.1",
@@ -466,7 +466,7 @@ async def perform_simple_search(query: str, user_engines: str | None = None) -> 
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{config.searxng_url}/search",
-                data=searxng_params,
+                data=searxng_request,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
@@ -545,47 +545,28 @@ async def search(request: SearchRequest) -> dict[str, Any]:
 
     response_time = time.time() - start_time
 
-    unresponsive = [
-        [str(x) for x in entry][:2]
-        for entry in (searxng_data.get("unresponsive_engines") or [])
-        if entry
-    ]
-
-    # SearXNG's other two output channels. Some engines write only there, so a
-    # response that carries `results` alone silently loses them: wikipedia's
-    # article text arrives as an infobox, and `currency` answers with
-    # "100.0 EUR = 116.77 USD" and no result at all.
-    answers = [a for a in (str(x.get("answer") or "") if isinstance(x, dict) else str(x)
-                           for x in (searxng_data.get("answers") or [])) if a]
-    infoboxes = [
-        {
-            k: v
-            for k, v in ib.items()
-            if k in ("infobox", "content", "engine", "id", "img_src", "urls", "attributes")
-        }
-        for ib in (searxng_data.get("infoboxes") or [])
-        if isinstance(ib, dict)
-    ]
+    channels = searxng_channels(searxng_data)
 
     response = TavilyResponse(
         query=request.query,
         follow_up_questions=None,
         # Tavily's own `answer` field is the natural home for a direct answer.
-        answer=answers[0] if answers else None,
+        answer=channels["answers"][0] if channels["answers"] else None,
         images=[],
         results=results,
         response_time=response_time,
         request_id=request_id,
-        unresponsive_engines=unresponsive,
-        answers=answers,
-        infoboxes=infoboxes,
+        **channels,
     )
 
     logger.info(f"Search completed: {len(results)} results in {response_time:.2f}s")
-    if unresponsive:
+    if channels["unresponsive_engines"]:
         logger.info(
             "Unresponsive engines: "
-            + ", ".join(f"{e[0]}={e[1] if len(e) > 1 else '?'}" for e in unresponsive)
+            + ", ".join(
+                f"{e[0]}={e[1] if len(e) > 1 else '?'}"
+                for e in channels["unresponsive_engines"]
+            )
         )
 
     return response.model_dump()
@@ -650,9 +631,12 @@ async def transcript(request: TranscriptRequest) -> dict[str, Any]:
 SIZE_LIMITS: dict[str, int] = {"s": 5000, "m": 10000, "l": 25000}
 PAGE_SIZE = 25000
 EXTRACT_CACHE_TTL_SEC = 1800  # 30 min — long enough to page through one document
+# Entries hold a whole document's markdown with no cap — a 306 KB page yielded
+# 277 KB — so the TTL alone is not a bound. Oldest out on insert.
+EXTRACT_CACHE_MAX = 64
 
-# extract_id -> {"url", "title", "content", "created_at"}
-_extract_cache: dict[str, dict[str, Any]] = {}
+# extract_id -> {"url", "title", "content", "source", "created_at"}
+_extract_cache: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 
 
 class ExtractRequest(BaseModel):
@@ -669,8 +653,19 @@ def _extract_id(url: str) -> str:
 
 def _gc_extract_cache() -> None:
     now = time.time()
-    for k in [k for k, v in _extract_cache.items() if now - v["created_at"] > EXTRACT_CACHE_TTL_SEC]:
+    for k in [
+        k
+        for k, v in _extract_cache.items()
+        if now - v["created_at"] > EXTRACT_CACHE_TTL_SEC
+    ]:
         _extract_cache.pop(k, None)
+
+
+def _cache_extract(extract_id: str, entry: dict[str, Any]) -> None:
+    _extract_cache[extract_id] = entry
+    _extract_cache.move_to_end(extract_id)
+    while len(_extract_cache) > EXTRACT_CACHE_MAX:
+        _extract_cache.popitem(last=False)
 
 
 async def _extract_url(url: str) -> tuple[str, str, str]:
@@ -682,47 +677,26 @@ async def _extract_url(url: str) -> tuple[str, str, str]:
     """
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=config.scraper_timeout),
-                headers=scrape_headers(),
-                allow_redirects=True,
-            ) as response:
-                if response.status != 200:
-                    raise HTTPException(
-                        status_code=502, detail=f"Fetch failed for {url}: HTTP {response.status}"
-                    )
-                body = await response.text()
-                native_md = served_markdown(
-                    response.headers.get("Content-Type", ""),
-                    response.headers.get("Vary", ""),
-                )
-    except HTTPException:
-        raise
+            body, content_type = await fetch_page(session, url)
+    except FetchFailed as e:
+        raise HTTPException(status_code=502, detail=f"Fetch failed for {url}: {e}")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Fetch failed for {url}: {type(e).__name__}")
+        raise HTTPException(
+            status_code=502, detail=f"Fetch failed for {url}: {type(e).__name__}"
+        )
 
-    if native_md:
-        # The site authored this markdown. Take its first ATX heading as the title
-        # rather than parsing HTML metadata that is not in this response.
-        first = next((ln for ln in body.splitlines() if ln.startswith("# ")), "")
-        return first[2:].strip(), body, "negotiated"
+    if not needs_html_conversion(content_type):
+        # Already text. If the site labelled it markdown say so, and either way its
+        # own first heading is the title — there is no HTML metadata to read.
+        source = "negotiated" if negotiated_markdown(content_type) else "extracted"
+        return first_heading(body), body, source
 
-    content = html_to_markdown(body)
+    content = await asyncio.to_thread(html_to_markdown, body)
     if not content:
         raise HTTPException(
             status_code=422, detail="No main content found on the page after cleaning"
         )
-
-    title = ""
-    try:
-        metadata = trafilatura.extract_metadata(body)
-        if metadata and metadata.title:
-            title = metadata.title
-    except Exception:
-        pass
-
-    return title, content, "extracted"
+    return html_title(body), content, "extracted"
 
 
 def _build_extract_response(
@@ -735,26 +709,25 @@ def _build_extract_response(
     source: str = "extracted",
 ) -> dict[str, Any]:
     total_chars = len(full_content)
+    # The two lanes differ only in how big a page is and how many there are, so they
+    # are one calculation. Non-"f" callers pass page=1, which makes this
+    # byte-identical to the branch it replaces.
+    page_size = PAGE_SIZE if size == "f" else SIZE_LIMITS[size]
+    total_pages = max(1, math.ceil(total_chars / page_size)) if size == "f" else 1
 
-    if size == "f":
-        total_pages = max(1, math.ceil(total_chars / PAGE_SIZE))
-        if page > total_pages:
-            raise HTTPException(
-                status_code=404, detail=f"Page {page} does not exist (total {total_pages})"
-            )
-        start = (page - 1) * PAGE_SIZE
-        chunk = full_content[start : start + PAGE_SIZE]
-        pages_info: dict[str, Any] = {
-            "current": page,
-            "total": total_pages,
-            "page_size": PAGE_SIZE,
-        }
-        if page < total_pages:
-            pages_info["next"] = f"/extract/{extract_id}/{page + 1}"
-    else:
-        limit = SIZE_LIMITS[size]
-        chunk = full_content[:limit]
-        pages_info = {"current": 1, "total": 1, "page_size": limit}
+    if page > total_pages:
+        raise HTTPException(
+            status_code=404, detail=f"Page {page} does not exist (total {total_pages})"
+        )
+
+    chunk = full_content[(page - 1) * page_size :][:page_size]
+    pages_info: dict[str, Any] = {
+        "current": page,
+        "total": total_pages,
+        "page_size": page_size,
+    }
+    if page < total_pages:
+        pages_info["next"] = f"/extract/{extract_id}/{page + 1}"
 
     return {
         "id": extract_id,
@@ -784,13 +757,16 @@ async def extract(request: ExtractRequest) -> dict[str, Any]:
         logger.info(f"Extract request: {request.url}")
         title, content, source = await _extract_url(request.url)
         logger.info(f"Extract {source}: {request.url} ({len(content)} chars)")
-        _extract_cache[extract_id] = {
-            "url": request.url,
-            "title": title,
-            "content": content,
-            "source": source,
-            "created_at": time.time(),
-        }
+        _cache_extract(
+            extract_id,
+            {
+                "url": request.url,
+                "title": title,
+                "content": content,
+                "source": source,
+                "created_at": time.time(),
+            },
+        )
 
     return _build_extract_response(
         extract_id, request.url, title, content, request.size, source=source
@@ -817,14 +793,47 @@ async def extract_page(
         cached["content"],
         size="f",
         page=page,
-        source=cached.get("source", "extracted"),
+        source=cached["source"],
     )
+
+
+async def missing_engines() -> list[str]:
+    """Engines this adapter routes to that SearXNG did not register.
+
+    Five were found by hand in a single day — reddit, pypi, wikipedia, marginalia,
+    and stract which cannot load at all — and each failed the same silent way: the
+    name resolves to nothing, `engines=` falls through to the default set, and the
+    results look like a working engine. Nothing stopped a sixth, so this does.
+    """
+    wanted = {e.strip() for fb in ENGINE_FALLBACKS for e in fb.split(",") if e.strip()}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{config.searxng_url}/config",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status != 200:
+                    return []
+                registered = {
+                    e["name"] for e in (await response.json()).get("engines", [])
+                }
+    except Exception as e:
+        logger.warning(f"Could not check registered engines: {e}")
+        return []
+    return sorted(wanted - registered)
 
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {"status": "ok", "service": "searxng-tavily-adapter"}
+    """Health check endpoint. Reports engines we route to that did not register."""
+    missing = await missing_engines()
+    if missing:
+        logger.warning(f"Engines declared but not registered: {', '.join(missing)}")
+    return {
+        "status": "ok",
+        "service": "searxng-tavily-adapter",
+        "missing_engines": missing,
+    }
 
 
 if __name__ == "__main__":

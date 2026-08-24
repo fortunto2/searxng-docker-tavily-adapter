@@ -37,15 +37,23 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 
 
-async def _post(client: httpx.AsyncClient, path: str, payload: dict) -> dict:
+async def _request(
+    client: httpx.AsyncClient, method: str, path: str, **kwargs
+) -> dict:
+    """One request path, so the error handling cannot drift. It already had: the
+    paging GET caught ConnectError but not TimeoutException, so a slow page raised
+    out of the tool instead of returning a readable error."""
     try:
-        resp = await client.post(f"{API_URL}{path}", json=payload, headers=_headers())
+        resp = await client.request(method, f"{API_URL}{path}", headers=_headers(), **kwargs)
     except httpx.ConnectError:
         return {"error": "Adapter unreachable", "detail": _DOWN}
     except httpx.TimeoutException:
-        return {"error": "Adapter timed out", "detail": f"POST {path}"}
+        return {"error": "Adapter timed out", "detail": f"{method} {path}"}
     if resp.status_code != 200:
-        return {"error": f"{path} returned {resp.status_code}", "detail": resp.text[:500]}
+        return {
+            "error": f"{path} returned {resp.status_code}",
+            "detail": resp.text[:500],
+        }
     return resp.json()
 
 
@@ -105,8 +113,11 @@ async def web_search(
     }
     if engines:
         payload["engines"] = engines
-    async with httpx.AsyncClient(timeout=60) as client:
-        data = await _post(client, "/search", payload)
+    # The adapter's worst case is three attempts at a 30 s SearXNG timeout plus
+    # two backoffs, before it even starts scraping. A 60 s budget here abandoned
+    # work the adapter was still doing.
+    async with httpx.AsyncClient(timeout=120) as client:
+        data = await _request(client, "POST", "/search", json=payload)
 
     # An empty result list plus suspended engines is a ban, not an absence. Say so,
     # otherwise the caller concludes the subject does not exist and moves on.
@@ -151,23 +162,14 @@ async def web_extract(url: str, size: str = "m", page: int = 1) -> dict:
         return {"error": f"page must be >= 1 (got {page})"}
 
     async with httpx.AsyncClient(timeout=90) as client:
-        data = await _post(client, "/extract", {"url": url, "size": size})
+        data = await _request(
+            client, "POST", "/extract", json={"url": url, "size": size}
+        )
         if "error" in data or page == 1:
             return data
 
         # Paging is a second call against the cached extraction.
-        try:
-            resp = await client.get(
-                f"{API_URL}/extract/{data['id']}/{page}", headers=_headers()
-            )
-        except httpx.ConnectError:
-            return {"error": "Adapter unreachable", "detail": _DOWN}
-        if resp.status_code != 200:
-            return {
-                "error": f"page {page} returned {resp.status_code}",
-                "detail": resp.text[:500],
-            }
-        return resp.json()
+        return await _request(client, "GET", f"/extract/{data['id']}/{page}")
 
 
 @mcp.tool()
@@ -189,7 +191,7 @@ async def youtube_transcript(
         "max_length": max_length,
     }
     async with httpx.AsyncClient(timeout=60) as client:
-        return await _post(client, "/transcript", payload)
+        return await _request(client, "POST", "/transcript", json=payload)
 
 
 def main() -> None:

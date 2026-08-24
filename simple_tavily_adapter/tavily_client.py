@@ -46,6 +46,36 @@ class TavilyResponse(BaseModel):
     infoboxes: list[dict[str, Any]] = []
 
 
+_INFOBOX_KEYS = ("infobox", "content", "engine", "id", "img_src", "urls", "attributes")
+
+
+def _answer_text(entry: Any) -> str:
+    return str(entry.get("answer") or "") if isinstance(entry, dict) else str(entry)
+
+
+def searxng_channels(data: dict) -> dict:
+    """Fold SearXNG's non-`results` channels into this model's fields.
+
+    Lives here, beside the model, because anything constructing a TavilyResponse
+    from a SearXNG payload has to fill these or under-report — and an empty
+    `unresponsive_engines` reads as "nothing found", which is the exact failure the
+    field was added to prevent.
+    """
+    return {
+        "unresponsive_engines": [
+            [str(x) for x in entry][:2]
+            for entry in (data.get("unresponsive_engines") or [])
+            if entry
+        ],
+        "answers": [a for a in map(_answer_text, data.get("answers") or []) if a],
+        "infoboxes": [
+            {k: v for k, v in ib.items() if k in _INFOBOX_KEYS}
+            for ib in (data.get("infoboxes") or [])
+            if isinstance(ib, dict)
+        ],
+    }
+
+
 class TavilyClient:
     def __init__(self, api_key: str = "", searxng_url: str | None = None):
         self.api_key = api_key  # Не используется, но сохраняем для совместимости
@@ -206,12 +236,15 @@ class TavilyClient:
 
         response_time = time.time() - start_time
 
+        channels = searxng_channels(searxng_data)
+
         return TavilyResponse(
             query=query,
             follow_up_questions=None,
-            answer=None,
+            answer=channels["answers"][0] if channels["answers"] else None,
             images=[],
             results=results,
             response_time=response_time,
             request_id=request_id,
+            **channels,
         ).model_dump()
