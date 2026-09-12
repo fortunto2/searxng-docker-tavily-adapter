@@ -55,9 +55,17 @@ engines:
   - name: brave
     disabled: false
   - name: bing
-    disabled: true       # Rate-limited, unreliable
+    disabled: false
+    # Bing drops the connection mid-request over HTTP/2 with curl_cffi's chrome
+    # impersonation (`ConnectionError: the server has disconnected`), while the same
+    # URL returns HTTP 200 from wget inside this very container — so it is the
+    # protocol, not the IP and not a captcha. Turning HTTP/2 off globally fixed bing
+    # and pushed mean latency from 0.9s to 1.6s for everyone; scoped here it costs
+    # nothing elsewhere. Per-engine `network:` overrides the outgoing defaults.
+    network:
+      enable_http2: false
   - name: startpage
-    disabled: true       # Often blocked
+    disabled: false
 
   # === Launches (idea research: what shipped, and how much traction it got) ===
   - name: producthunt
@@ -237,7 +245,10 @@ adapter:
   search:
     default_max_results: 10
     # Default engines for general queries. Smart selector overrides per query.
-    default_engines: "google,duckduckgo,brave,reddit"
+    # duckduckgo is out of this list on purpose: measured 10/10 captcha today, and
+    # its exception carries suspended_time=0, so it is retried on every single query
+    # instead of being rested. bing and startpage replace it as the non-Google half.
+    default_engines: "google,brave,bing,startpage,reddit"
     default_categories: "general"
     default_language: "auto"
     safesearch: 1
