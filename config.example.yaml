@@ -50,8 +50,21 @@ engines:
   # === Primary search engines (used in default queries) ===
   - name: google
     disabled: false
+  # Disabled, not merely dropped from the defaults: this IP is past the captcha
+  # stage. Measured 2026-09-12, in this order over ~40 minutes — html and lite
+  # endpoints both HTTP 202 with 47 captcha markers, then, after a 10-query series
+  # and searxng retrying it on every search (its exception carries
+  # suspended_time=0, so it is never rested), TCP stops connecting at all: DNS
+  # resolves in 3ms, connect never completes, curl exits 28. Every request we make
+  # now extends that, so the engine has to be off for the block to age out.
+  #
+  # To retest, assert RESULTS, never the absence of a captcha marker:
+  #   curl -s -m 15 -A '<a real browser UA>' 'https://html.duckduckgo.com/html/?q=rust' | grep -c result__a
+  # A `grep -c anomaly` returning 0 is what a dropped connection looks like too —
+  # an empty body greps clean, and that reading nearly went into this file as
+  # "the ban lifted".
   - name: duckduckgo
-    disabled: false
+    disabled: true
   - name: brave
     disabled: false
   - name: bing
@@ -64,8 +77,10 @@ engines:
     # nothing elsewhere. Per-engine `network:` overrides the outgoing defaults.
     network:
       enable_http2: false
-  - name: startpage
-    disabled: false
+  # startpage is gone: the engine was removed upstream, so this entry matched
+  # nothing and `disabled: false` had no effect — the same trap the stract and
+  # reddit notes in this file describe. Verified against /config: 271 engines, no
+  # startpage among them. Left as a note rather than a config line.
 
   # === Launches (idea research: what shipped, and how much traction it got) ===
   - name: producthunt
@@ -247,8 +262,8 @@ adapter:
     # Default engines for general queries. Smart selector overrides per query.
     # duckduckgo is out of this list on purpose: measured 10/10 captcha today, and
     # its exception carries suspended_time=0, so it is retried on every single query
-    # instead of being rested. bing and startpage replace it as the non-Google half.
-    default_engines: "google,brave,bing,startpage,reddit"
+    # instead of being rested. bing replaces it as the non-Google half.
+    default_engines: "google,brave,bing,reddit,wikipedia"
     default_categories: "general"
     default_language: "auto"
     safesearch: 1

@@ -13,15 +13,28 @@ Engine groups:
 - NEWS: recent events, launches, trends
 """
 
-# Engine groups — all must be enabled in SearXNG config
-# Independent indexes (mojeek, stract, marginalia) added for diversity.
-ENGINES_GENERAL = "google,duckduckgo,brave,mojeek"
+# Engine groups — all must be enabled in SearXNG config.
+#
+# duckduckgo and mojeek were in six of these seven lists and are in none now.
+# Measured 2026-09-12: duckduckgo answers this IP with HTTP 202 + 47 captcha
+# markers, then stops accepting TCP altogether (DNS resolves, connect never
+# completes, curl exit 28); mojeek answers 403. Both being dead cost every query
+# the full request timeout, which is why mean latency ran 3.5s with a 9.9s worst
+# case while `default_engines` in config.yaml had already dropped them — this list
+# is a second, independent source of truth that the config cannot reach.
+#
+# bing replaces them: HTTP 200, no captcha marker from this machine. startpage was
+# the other candidate and is not one — the engine no longer exists upstream, so
+# enabling it was a config line that matched nothing. Keep this file and config.yaml
+# in step: a search only sees an engine if BOTH agree, and /config is the authority
+# on whether the engine exists at all.
+ENGINES_GENERAL = "google,brave,bing"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
-ENGINES_TECH = "google,github,stackoverflow,duckduckgo,lobste.rs,mdn"
-ENGINES_PRODUCT = "google,duckduckgo,brave,mojeek,crowdview,google play apps,apple app store"
-ENGINES_REFERENCE = "google,wikipedia,wikidata,duckduckgo"
-ENGINES_NEWS = "google,google news,duckduckgo,brave,hackernews,lobste.rs"
-ENGINES_AI = "google,github,huggingface,arxiv,duckduckgo"
+ENGINES_TECH = "google,github,stackoverflow,bing,lobste.rs,mdn"
+ENGINES_PRODUCT = "google,brave,bing,crowdview,google play apps,apple app store"
+ENGINES_REFERENCE = "google,wikipedia,wikidata,bing"
+ENGINES_NEWS = "google,google news,brave,bing,hackernews,lobste.rs"
+ENGINES_AI = "google,github,huggingface,arxiv,brave"
 
 # Keywords for each category (EN + RU)
 _ACADEMIC_KW = [

@@ -55,11 +55,14 @@ USER_AGENTS = [
 ]
 
 # Fallback engine lists for retry logic (when primary engines fail/captcha)
+# A retry list holding a dead engine is worse than a short one: the retry waits
+# out its timeout and then returns the same nothing. duckduckgo is off this IP
+# entirely (see engine_selector.py for the measurement), so it is out of all four.
 ENGINE_FALLBACKS = [
-    "google,duckduckgo,brave",              # Primary: broad web search
-    "google,brave,wikipedia",               # Retry: alternative mix
-    "duckduckgo,brave,wikipedia",           # Retry: alternative combo
-    "google,duckduckgo,wikipedia,wikidata", # Retry: reference-heavy
+    "google,brave,bing",                  # Primary: broad web search
+    "google,brave,wikipedia",             # Retry: alternative mix
+    "bing,brave,wikipedia",               # Retry: no Google at all
+    "google,bing,wikipedia,wikidata",     # Retry: reference-heavy
 ]
 
 

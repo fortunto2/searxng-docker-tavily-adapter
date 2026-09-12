@@ -93,7 +93,9 @@ class Config:
         return (
             self._config.get("adapter", {})
             .get("search", {})
-            .get("default_engines", "google,duckduckgo")
+            # Last-resort default when no config is mounted. duckduckgo was here and is
+            # dead for this IP, so the fallback pointed at a dead engine.
+            .get("default_engines", "google,brave,bing")
         )
 
 
