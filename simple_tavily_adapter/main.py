@@ -61,7 +61,7 @@ USER_AGENTS = [
 ENGINE_FALLBACKS = [
     "google,brave,bing",                  # Primary: broad web search
     "google,brave,wikipedia",             # Retry: alternative mix
-    "bing,brave,wikipedia",               # Retry: no Google at all
+    "yahoo,yandex,bing",                  # Retry: no Google or Brave (measured 10/10 top-3, 28 Oct)
     "google,bing,wikipedia,wikidata",     # Retry: reference-heavy
 ]
 

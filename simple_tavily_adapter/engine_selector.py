@@ -28,12 +28,12 @@ Engine groups:
 # enabling it was a config line that matched nothing. Keep this file and config.yaml
 # in step: a search only sees an engine if BOTH agree, and /config is the authority
 # on whether the engine exists at all.
-ENGINES_GENERAL = "google,brave,bing"
+ENGINES_GENERAL = "google,brave,bing,yandex,yahoo"
 ENGINES_ACADEMIC = "google,arxiv,google scholar,wikipedia,wikidata"
-ENGINES_TECH = "google,github,stackoverflow,bing,lobste.rs,mdn"
-ENGINES_PRODUCT = "google,brave,bing,crowdview,google play apps,apple app store"
-ENGINES_REFERENCE = "google,wikipedia,wikidata,bing"
-ENGINES_NEWS = "google,google news,brave,bing,hackernews,lobste.rs"
+ENGINES_TECH = "google,github,stackoverflow,bing,yandex,yahoo,lobste.rs,mdn"
+ENGINES_PRODUCT = "google,brave,bing,yandex,yahoo,crowdview,google play apps,apple app store"
+ENGINES_REFERENCE = "google,wikipedia,wikidata,bing,yandex,yahoo"
+ENGINES_NEWS = "google,google news,brave,bing,yandex,yahoo,hackernews,lobste.rs"
 ENGINES_AI = "google,github,huggingface,arxiv,brave"
 
 # Keywords for each category (EN + RU)

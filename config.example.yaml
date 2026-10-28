@@ -67,6 +67,13 @@ engines:
     disabled: true
   - name: brave
     disabled: false
+  # yahoo and yandex are off upstream; on 28 Oct 2026, with google, brave and google
+  # cse all refusing, they lifted auto-routed doc queries from 7/10 to 10/10
+  # (expected site in the top 3) and from 3/10 to 8/10 at #1.
+  - name: yahoo
+    disabled: false
+  - name: yandex
+    disabled: false
   - name: bing
     disabled: false
     # Bing drops the connection mid-request over HTTP/2 with curl_cffi's chrome
@@ -263,7 +270,7 @@ adapter:
     # duckduckgo is out of this list on purpose: measured 10/10 captcha today, and
     # its exception carries suspended_time=0, so it is retried on every single query
     # instead of being rested. bing replaces it as the non-Google half.
-    default_engines: "google,brave,bing,reddit,wikipedia"
+    default_engines: "google,brave,bing,yahoo,yandex,reddit,wikipedia"
     default_categories: "general"
     default_language: "auto"
     safesearch: 1
