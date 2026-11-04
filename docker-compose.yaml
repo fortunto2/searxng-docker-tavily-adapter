@@ -87,6 +87,17 @@ services:
       - cloudflare
 
 
+  searxng-mcp:
+    build: ./searxng_mcp
+    container_name: searxng-mcp
+    restart: unless-stopped
+    networks:
+      - searxng
+    depends_on:
+      - tavily-adapter
+    profiles:
+      - cloudflare
+
   solograph-search:
     build:
       context: /home/rustam/solograph

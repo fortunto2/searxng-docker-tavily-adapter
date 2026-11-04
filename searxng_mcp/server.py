@@ -195,6 +195,24 @@ async def youtube_transcript(
 
 
 def main() -> None:
+    # MCP_TRANSPORT=http serves streamable HTTP at /mcp (the alliance container, behind
+    # Cloudflare Access: the Host header is the public name, so rebinding checks are off).
+    if os.environ.get("MCP_TRANSPORT") == "http":
+        import asyncio
+
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        asyncio.run(
+            mcp.run_streamable_http_async(
+                host="0.0.0.0",
+                port=int(os.environ.get("MCP_PORT", "8000")),
+                stateless_http=True,
+                transport_security=TransportSecuritySettings(
+                    enable_dns_rebinding_protection=False
+                ),
+            )
+        )
+        return
     mcp.run(transport="stdio")
 
 
