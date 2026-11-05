@@ -44,3 +44,6 @@ venv.bak/
 # Local machine-specific compose overrides
 docker-compose.override.yaml
 .venv/
+
+# Search cluster node secrets
+cluster/node.env

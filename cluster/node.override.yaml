@@ -1,0 +1,22 @@
+# Compose override for a cluster node other than the main one (see cluster/README.md).
+# Same services, same container names, so the tunnel's ingress (http://tavily-adapter:8000,
+# http://searxng-mcp:8000) resolves on every node. Differences: nothing listens beyond
+# localhost (Docker bypasses the host firewall), and the tunnel token comes from
+# cluster/node.env instead of the command line.
+services:
+  searxng:
+    ports: !override
+      - "127.0.0.1:8999:8080"
+
+  tavily-adapter:
+    ports: !override
+      - "127.0.0.1:8013:8000"
+
+  cloudflared:
+    command: !override
+      - tunnel
+      - --no-autoupdate
+      - run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?put the tunnel token in cluster/node.env}
+      - TUNNEL_METRICS=0.0.0.0:8081
