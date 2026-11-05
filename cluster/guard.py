@@ -34,13 +34,16 @@ import urllib.request
 from pathlib import Path
 
 CONTAINER = os.environ.get("SEARCH_GUARD_CONTAINER", "searxng-cloudflared")
-KEYCHAIN = os.environ.get("SEARCH_GUARD_KEYCHAIN", "cloudflare-api-token")
+
 PROBE = os.environ.get("SEARCH_GUARD_PROBE", "https://www.google.com/generate_204")
 SLOW = float(os.environ.get("SEARCH_GUARD_SLOW", "1.5"))
 N = int(os.environ.get("SEARCH_GUARD_N", "3"))
 READY = os.environ.get("SEARCH_GUARD_READY", "http://127.0.0.1:8081/ready")
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "search-guard"
 LABEL = "org.searxng-cluster.guard"
+# install remembers the Keychain item, so `status` from a shell finds it without the env var.
+_saved = STATE / "keychain"
+KEYCHAIN = os.environ.get("SEARCH_GUARD_KEYCHAIN") or (_saved.read_text().strip() if _saved.exists() else "cloudflare-api-token")
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
 
 
@@ -70,19 +73,26 @@ def container() -> tuple[bool, str]:
     return bool(info["State"]["Running"]), token
 
 
-def ready() -> bool | None:
-    """Does our own cloudflared hold a tunnel connection? None when its metrics are not reachable."""
+def ready() -> tuple[bool | None, str]:
+    """(holds a tunnel connection?, connector id) of our own cloudflared; None when its
+    metrics are not reachable."""
     try:
         with urllib.request.urlopen(READY, timeout=5) as r:
-            return json.load(r).get("readyConnections", 0) > 0
+            d = json.load(r)
+        return d.get("readyConnections", 0) > 0, d.get("connectorId", "")
     except urllib.error.HTTPError as e:  # 503 = no connection registered
-        return False if e.code == 503 else None
+        return (False, "") if e.code == 503 else (None, "")
     except Exception:
-        return None
+        return None, ""
 
 
-def replicas(token: str) -> int | None:
-    """Distinct connectors on the tunnel, None when the API cannot be read."""
+def others(token: str, own: list[str], running: bool) -> int | None:
+    """Connectors on the tunnel that are not this node, None when the API cannot be read.
+
+    Our own past connector ids are excluded: right after a restart the dead one is still
+    listed for a while and once passed for "another replica" (04.11.2026). While running
+    with no known id of ours among them, one of the listed ones is assumed to be us.
+    """
     try:
         meta = json.loads(base64.b64decode(token + "=" * (-len(token) % 4)))
         api_token = sh("security", "find-generic-password", "-s", KEYCHAIN, "-w").stdout.strip()
@@ -91,10 +101,13 @@ def replicas(token: str) -> int | None:
             headers={"Authorization": f"Bearer {api_token}"},
         )
         with urllib.request.urlopen(req, timeout=15) as r:
-            conns = json.load(r)["result"]["connections"]
+            ids = {c["client_id"] for c in json.load(r)["result"]["connections"]}
     except Exception:
         return None
-    return len({c["client_id"] for c in conns})
+    n = len(ids - set(own))
+    if running and not ids & set(own):
+        n = max(n - 1, 0)
+    return n
 
 
 def load() -> dict:
@@ -126,7 +139,10 @@ def check() -> int:
         st["last"]["note"] = f"no container {CONTAINER}"
         save(st)
         return 0
-    alive = ready() if running else None
+    alive, cid = ready() if running else (None, "")
+    st.setdefault("own", [])
+    if cid and cid not in st["own"]:
+        st["own"] = (st["own"] + [cid])[-5:]
     st["dead"] = st.get("dead", 0) + 1 if alive is False else 0
     st["last"]["ready"] = alive
     if running and st["dead"] >= 2:
@@ -136,16 +152,16 @@ def check() -> int:
             st["dead"] = 0
             log("restarted cloudflared: running but no tunnel connection for 2 checks")
     elif running and st["bad"] >= N:
-        total = replicas(token)
-        st["last"]["replicas"] = total
-        if total is not None and total >= 2:
+        n = others(token, st["own"], running=True)
+        st["last"]["others"] = n
+        if n is not None and n >= 1:
             if sh("docker", "stop", CONTAINER).returncode == 0:
                 st["evicted"] = True
-                log(f"left the pool: {st['bad']} slow checks, last {secs:.1f}s, {total - 1} other replica(s) serve")
+                log(f"left the pool: {st['bad']} slow checks, last {secs:.1f}s, {n} other replica(s) serve")
     elif not running and st["evicted"]:
-        total = replicas(token)
-        st["last"]["replicas"] = total
-        if st["good"] >= N or total == 0:
+        n = others(token, st["own"], running=False)
+        st["last"]["others"] = n
+        if st["good"] >= N or n == 0:
             if sh("docker", "start", CONTAINER).returncode == 0:
                 st["evicted"] = False
                 why = f"{st['good']} good checks" if st["good"] >= N else "no other replica left"
@@ -170,6 +186,7 @@ def install() -> int:
 </dict></plist>
 """)
     STATE.mkdir(parents=True, exist_ok=True)
+    _saved.write_text(KEYCHAIN + "\n")
     sh("launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}")
     r = sh("launchctl", "bootstrap", f"gui/{os.getuid()}", str(PLIST))
     print(f"installed {PLIST}" if r.returncode == 0 else f"launchctl: {r.stderr.strip()}")
@@ -186,8 +203,8 @@ def uninstall() -> int:
 def status() -> int:
     st = load()
     running, token = container()
-    total = replicas(token) if token else None
-    print(json.dumps({**st, "running_now": running, "replicas_now": total}, indent=1))
+    n = others(token, st.get("own", []), running) if token else None
+    print(json.dumps({**st, "running_now": running, "other_replicas_now": n}, indent=1))
     log_file = STATE / "guard.log"
     if log_file.exists():
         print("".join(log_file.read_text().splitlines(True)[-5:]), end="")

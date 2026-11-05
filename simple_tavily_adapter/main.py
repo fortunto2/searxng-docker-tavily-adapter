@@ -17,7 +17,7 @@ import os
 import random
 import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from typing import Any, Literal
 
 import aiohttp
@@ -25,7 +25,8 @@ import nh3
 import trafilatura
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi.responses import JSONResponse
 from markdownify import markdownify as md
 from pydantic import BaseModel, Field
 
@@ -68,6 +69,33 @@ ENGINE_FALLBACKS = [
 
 
 app = FastAPI(title="SearXNG Tavily Adapter", version="1.0.0")
+
+# AI-NOTE: one budget per node for traffic from outside. Everything that arrives through
+# the Cloudflare tunnel (cf-ray header, or X-Via-Tunnel from the alliance MCP container)
+# spends this node's home IP with the search engines, whoever sent it and by whichever
+# route; a burst of ~80 queries in five minutes once got google cse suspended for hours.
+# Local callers carry neither header and are not limited. TUNNEL_RPM=0 turns it off.
+TUNNEL_RPM = int(os.environ.get("TUNNEL_RPM", "30"))
+_BUDGETED = ("/search", "/extract", "/transcript")
+_tunnel_hits: deque[float] = deque()
+
+
+@app.middleware("http")
+async def tunnel_budget(request: Request, call_next):
+    external = "cf-ray" in request.headers or "x-via-tunnel" in request.headers
+    if TUNNEL_RPM > 0 and external and request.method == "POST" and request.url.path in _BUDGETED:
+        now = time.monotonic()
+        while _tunnel_hits and now - _tunnel_hits[0] > 60:
+            _tunnel_hits.popleft()
+        if len(_tunnel_hits) >= TUNNEL_RPM:
+            retry = int(60 - (now - _tunnel_hits[0])) + 1
+            return JSONResponse(
+                {"detail": f"node budget: {TUNNEL_RPM} requests a minute from outside, retry in {retry}s"},
+                status_code=429,
+                headers={"Retry-After": str(retry)},
+            )
+        _tunnel_hits.append(now)
+    return await call_next(request)
 
 
 class SearchRequest(BaseModel):

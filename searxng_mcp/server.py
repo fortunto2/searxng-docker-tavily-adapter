@@ -34,7 +34,12 @@ _DOWN = (
 
 
 def _headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+    h = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+    # In http mode every call came in through the tunnel: the adapter counts it
+    # against the node's outside budget (TUNNEL_RPM).
+    if os.environ.get("MCP_TRANSPORT") == "http":
+        h["X-Via-Tunnel"] = "1"
+    return h
 
 
 async def _request(
