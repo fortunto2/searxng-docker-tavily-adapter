@@ -12,20 +12,19 @@ restarts the container when cloudflared runs but holds no tunnel connection for 
 checks in a row (its /ready metrics endpoint, published on 127.0.0.1:8081).
 
   cluster/guard.py            one check; launchd runs it every 60 s
-  cluster/guard.py status     last check, streaks, connected replicas
-  cluster/guard.py install    write and load the launchd agent (macOS)
+  cluster/guard.py status     streak, eviction, other connected replicas, last moves
+  SEARCH_GUARD_KEYCHAIN=<item> cluster/guard.py install    launchd agent (macOS)
   cluster/guard.py uninstall
 
-Settings (env): SEARCH_GUARD_KEYCHAIN (Keychain item holding a Cloudflare API token
-that can read tunnels, default cloudflare-api-token), SEARCH_GUARD_CONTAINER
-(searxng-cloudflared), SEARCH_GUARD_PROBE, SEARCH_GUARD_SLOW (seconds, 1.5),
-SEARCH_GUARD_N (3). The tunnel and account are read from the container's own token.
+<item> is a Keychain entry holding a Cloudflare API token that can read tunnels. The
+account and tunnel come from the container's own tunnel token.
 """
 from __future__ import annotations
 
 import base64
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import time
@@ -33,18 +32,24 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-CONTAINER = os.environ.get("SEARCH_GUARD_CONTAINER", "searxng-cloudflared")
-
-PROBE = os.environ.get("SEARCH_GUARD_PROBE", "https://www.google.com/generate_204")
-SLOW = float(os.environ.get("SEARCH_GUARD_SLOW", "1.5"))
-N = int(os.environ.get("SEARCH_GUARD_N", "3"))
-READY = os.environ.get("SEARCH_GUARD_READY", "http://127.0.0.1:8081/ready")
-STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "search-guard"
+CONTAINER = "searxng-cloudflared"
+PROBE = "https://www.google.com/generate_204"
+READY = "http://127.0.0.1:8081/ready"
+SLOW = 1.5  # seconds for one HTTPS request; a healthy line answers in 0.2-0.5
+N = 3  # checks in a row before acting
+STATE = Path.home() / ".local/state/search-guard"
 LABEL = "org.searxng-cluster.guard"
-# install remembers the Keychain item, so `status` from a shell finds it without the env var.
-_saved = STATE / "keychain"
-KEYCHAIN = os.environ.get("SEARCH_GUARD_KEYCHAIN") or (_saved.read_text().strip() if _saved.exists() else "cloudflare-api-token")
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
+
+
+def keychain_item() -> str:
+    """From the env (install, launchd) or the installed plist (status from a shell)."""
+    if os.environ.get("SEARCH_GUARD_KEYCHAIN"):
+        return os.environ["SEARCH_GUARD_KEYCHAIN"]
+    try:
+        return plistlib.loads(PLIST.read_bytes())["EnvironmentVariables"]["SEARCH_GUARD_KEYCHAIN"]
+    except Exception:
+        return ""
 
 
 def sh(*cmd: str) -> subprocess.CompletedProcess:
@@ -62,15 +67,18 @@ def probe() -> float:
     return time.monotonic() - t0
 
 
-def container() -> tuple[bool, str]:
-    """(running, tunnel token) of the cloudflared container."""
+def container() -> tuple[bool, tuple[str, str] | None]:
+    """(running, (account, tunnel)) of the cloudflared container; None when there is none."""
     r = sh("docker", "inspect", CONTAINER)
     if r.returncode != 0:
-        return False, ""
+        return False, None
     info = json.loads(r.stdout)[0]
     words = (info["Config"].get("Cmd") or []) + [e.split("=", 1)[-1] for e in info["Config"].get("Env") or []]
     token = next((w for w in words if w.startswith("eyJ")), "")
-    return bool(info["State"]["Running"]), token
+    if not token:
+        return bool(info["State"]["Running"]), None
+    meta = json.loads(base64.b64decode(token + "=" * (-len(token) % 4)))
+    return bool(info["State"]["Running"]), (meta["a"], meta["t"])
 
 
 def ready() -> tuple[bool | None, str]:
@@ -86,7 +94,7 @@ def ready() -> tuple[bool | None, str]:
         return None, ""
 
 
-def others(token: str, own: list[str], running: bool) -> int | None:
+def others(tunnel: tuple[str, str], own: list[str], running: bool) -> int | None:
     """Connectors on the tunnel that are not this node, None when the API cannot be read.
 
     Our own past connector ids are excluded: right after a restart the dead one is still
@@ -94,10 +102,9 @@ def others(token: str, own: list[str], running: bool) -> int | None:
     with no known id of ours among them, one of the listed ones is assumed to be us.
     """
     try:
-        meta = json.loads(base64.b64decode(token + "=" * (-len(token) % 4)))
-        api_token = sh("security", "find-generic-password", "-s", KEYCHAIN, "-w").stdout.strip()
+        api_token = sh("security", "find-generic-password", "-s", keychain_item(), "-w").stdout.strip()
         req = urllib.request.Request(
-            f"https://api.cloudflare.com/client/v4/accounts/{meta['a']}/cfd_tunnel/{meta['t']}",
+            f"https://api.cloudflare.com/client/v4/accounts/{tunnel[0]}/cfd_tunnel/{tunnel[1]}",
             headers={"Authorization": f"Bearer {api_token}"},
         )
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -114,7 +121,7 @@ def load() -> dict:
     try:
         return json.loads((STATE / "state.json").read_text())
     except Exception:
-        return {"bad": 0, "good": 0, "evicted": False}
+        return {}
 
 
 def save(st: dict) -> None:
@@ -128,65 +135,75 @@ def log(msg: str) -> None:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
 
 
+def restart_if_dead(st: dict, alive: bool | None) -> bool:
+    # A network switch (VPN on/off, new wifi) can leave cloudflared running with no
+    # connection and not recovering for minutes (seen 04.11.2026). A restart re-registers.
+    st["dead"] = st.get("dead", 0) + 1 if alive is False else 0
+    if st["dead"] < 2 or sh("docker", "restart", CONTAINER).returncode != 0:
+        return False
+    st["dead"] = 0
+    log("restarted cloudflared: running but no tunnel connection for 2 checks")
+    return True
+
+
+def leave_if_slow(st: dict, tunnel: tuple[str, str], secs: float) -> None:
+    if st["streak"] > -N:
+        return
+    n = others(tunnel, st["own"], running=True)
+    if n and sh("docker", "stop", CONTAINER).returncode == 0:
+        st["evicted"] = True
+        log(f"left the pool: {-st['streak']} slow checks, last {secs:.1f}s, {n} other replica(s) serve")
+
+
+def rejoin_if_good_or_alone(st: dict, tunnel: tuple[str, str], secs: float) -> None:
+    good = st["streak"] >= N
+    if not good and others(tunnel, st["own"], running=False) != 0:
+        return
+    if sh("docker", "start", CONTAINER).returncode == 0:
+        st["evicted"] = False
+        why = f"{st['streak']} good checks" if good else "no other replica left"
+        log(f"back in the pool: {why}, last {secs:.1f}s")
+
+
 def check() -> int:
     st = load()
+    st.setdefault("own", [])
     secs = probe()
-    slow = secs > SLOW
-    st["bad"], st["good"] = (st["bad"] + 1, 0) if slow else (0, st["good"] + 1)
-    running, token = container()
-    st["last"] = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "probe_s": round(secs, 2), "running": running}
-    if not token:
-        st["last"]["note"] = f"no container {CONTAINER}"
+    # One signed streak: +k after k good checks in a row, -k after k slow ones.
+    prev = st.get("streak", 0)
+    st["streak"] = (min(prev, 0) - 1) if secs > SLOW else (max(prev, 0) + 1)
+    st["last_probe_s"] = round(secs, 2)
+    running, tunnel = container()
+    if tunnel is None:
         save(st)
         return 0
-    alive, cid = ready() if running else (None, "")
-    st.setdefault("own", [])
-    if cid and cid not in st["own"]:
-        st["own"] = (st["own"] + [cid])[-5:]
-    st["dead"] = st.get("dead", 0) + 1 if alive is False else 0
-    st["last"]["ready"] = alive
-    if running and st["dead"] >= 2:
-        # A network switch (WARP on/off, new wifi) can leave cloudflared running with no
-        # connection and not recovering for minutes (seen 04.11.2026). A restart re-registers.
-        if sh("docker", "restart", CONTAINER).returncode == 0:
-            st["dead"] = 0
-            log("restarted cloudflared: running but no tunnel connection for 2 checks")
-    elif running and st["bad"] >= N:
-        n = others(token, st["own"], running=True)
-        st["last"]["others"] = n
-        if n is not None and n >= 1:
-            if sh("docker", "stop", CONTAINER).returncode == 0:
-                st["evicted"] = True
-                log(f"left the pool: {st['bad']} slow checks, last {secs:.1f}s, {n} other replica(s) serve")
-    elif not running and st["evicted"]:
-        n = others(token, st["own"], running=False)
-        st["last"]["others"] = n
-        if st["good"] >= N or n == 0:
-            if sh("docker", "start", CONTAINER).returncode == 0:
-                st["evicted"] = False
-                why = f"{st['good']} good checks" if st["good"] >= N else "no other replica left"
-                log(f"back in the pool: {why}, last {secs:.1f}s")
+    if running:
+        alive, cid = ready()
+        if cid and cid not in st["own"]:
+            st["own"] = (st["own"] + [cid])[-5:]
+        if not restart_if_dead(st, alive):
+            leave_if_slow(st, tunnel, secs)
+    elif st.get("evicted"):  # a container stopped by hand is left alone
+        rejoin_if_good_or_alone(st, tunnel, secs)
     save(st)
     return 0
 
 
 def install() -> int:
-    path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-    PLIST.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>{LABEL}</string>
-  <key>ProgramArguments</key><array><string>/usr/bin/python3</string><string>{Path(__file__).resolve()}</string></array>
-  <key>StartInterval</key><integer>60</integer>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>{path}</string>
-    <key>SEARCH_GUARD_KEYCHAIN</key><string>{KEYCHAIN}</string>
-  </dict>
-  <key>StandardErrorPath</key><string>{STATE}/stderr.log</string>
-</dict></plist>
-""")
+    if not keychain_item():
+        print("set SEARCH_GUARD_KEYCHAIN to the Keychain item with a Cloudflare API token")
+        return 2
     STATE.mkdir(parents=True, exist_ok=True)
-    _saved.write_text(KEYCHAIN + "\n")
+    PLIST.write_bytes(plistlib.dumps({
+        "Label": LABEL,
+        "ProgramArguments": ["/usr/bin/python3", str(Path(__file__).resolve())],
+        "StartInterval": 60,
+        "EnvironmentVariables": {
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+            "SEARCH_GUARD_KEYCHAIN": keychain_item(),
+        },
+        "StandardErrorPath": str(STATE / "stderr.log"),
+    }))
     sh("launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}")
     r = sh("launchctl", "bootstrap", f"gui/{os.getuid()}", str(PLIST))
     print(f"installed {PLIST}" if r.returncode == 0 else f"launchctl: {r.stderr.strip()}")
@@ -202,8 +219,8 @@ def uninstall() -> int:
 
 def status() -> int:
     st = load()
-    running, token = container()
-    n = others(token, st.get("own", []), running) if token else None
+    running, tunnel = container()
+    n = others(tunnel, st.get("own", []), running) if tunnel else None
     print(json.dumps({**st, "running_now": running, "other_replicas_now": n}, indent=1))
     log_file = STATE / "guard.log"
     if log_file.exists():

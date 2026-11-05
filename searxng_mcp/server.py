@@ -17,14 +17,18 @@ Run:
   uv run --project /path/to/this/repo searxng-mcp
 """
 
+import asyncio
 import os
 
 import httpx
 from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 mcp = MCPServer("searxng")
 
 API_URL = os.environ.get("TAVILY_API_URL", "http://localhost:8013").rstrip("/")
+# MCP_TRANSPORT=http: the alliance container, reached only through the tunnel.
+HTTP = os.environ.get("MCP_TRANSPORT") == "http"
 API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
 _DOWN = (
@@ -37,7 +41,7 @@ def _headers() -> dict[str, str]:
     h = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     # In http mode every call came in through the tunnel: the adapter counts it
     # against the node's outside budget (TUNNEL_RPM).
-    if os.environ.get("MCP_TRANSPORT") == "http":
+    if HTTP:
         h["X-Via-Tunnel"] = "1"
     return h
 
@@ -202,11 +206,7 @@ async def youtube_transcript(
 def main() -> None:
     # MCP_TRANSPORT=http serves streamable HTTP at /mcp (the alliance container, behind
     # Cloudflare Access: the Host header is the public name, so rebinding checks are off).
-    if os.environ.get("MCP_TRANSPORT") == "http":
-        import asyncio
-
-        from mcp.server.transport_security import TransportSecuritySettings
-
+    if HTTP:
         asyncio.run(
             mcp.run_streamable_http_async(
                 host="0.0.0.0",

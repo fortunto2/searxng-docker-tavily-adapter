@@ -58,7 +58,7 @@ printf '%s' "$TUNNEL_TOKEN" | ssh NODE 'cd searxng-docker-tavily-adapter && clus
 `render-node-config.py` writes a fresh `server.secret_key` and disables every engine that
 needs a credential (it lists them in the first line). `node-up.sh` keeps the token in
 `cluster/node.env` (mode 600, gitignored), binds the local ports to 127.0.0.1 only (Docker
-bypasses the host firewall), starts the five services and waits for `/health`.
+bypasses the host firewall), starts the five services and waits until they are healthy.
 
 Check that the tunnel sees it: the tunnel's page in Zero Trust lists one connector per
 node, or `guard.py status` prints `replicas_now`.
@@ -66,15 +66,13 @@ node, or `guard.py status` prints `replicas_now`.
 ## Guard (nodes on unreliable networks)
 
 ```bash
-SEARCH_GUARD_KEYCHAIN=<keychain item with a Cloudflare API token that reads tunnels> \
+SEARCH_GUARD_KEYCHAIN=<Keychain item with a Cloudflare API token that reads tunnels> \
   python3 cluster/guard.py install     # launchd agent, a check every 60 s
-python3 cluster/guard.py status        # streaks, last probe, connected replicas, last moves
-python3 cluster/guard.py uninstall
+python3 cluster/guard.py status
 ```
 
-State and the move log live in `~/.local/state/search-guard/`. Thresholds:
-`SEARCH_GUARD_SLOW` (1.5 s for one HTTPS request; a healthy line answers in 0.2-0.5 s) and
-`SEARCH_GUARD_N` (3 checks in a row). A container stopped by hand is left alone.
+Thresholds and the full behaviour are in the docstring of `guard.py`. State and the log of
+moves: `~/.local/state/search-guard/`.
 
 ## Remove a node
 

@@ -5,7 +5,7 @@
 
 A node gets the same engines and routing, minus what is personal to the main node:
 a fresh server.secret_key, and every engine credential (api_token, api_key other than
-"public", client_id, client_secret) removed, with that engine disabled.
+"public", client_id, client_secret, token) removed, with that engine disabled.
 """
 import secrets
 import sys
