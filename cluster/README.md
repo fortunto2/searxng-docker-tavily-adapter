@@ -29,6 +29,10 @@ flowchart LR
   wifi) still gets the traffic near it. `guard.py` closes that gap from the node's side:
   after 3 slow checks it stops its own `cloudflared`, only while another replica is
   connected, and starts it again after 3 good checks or when it is the last one left.
+  It also restarts `cloudflared` when the container runs but holds no tunnel connection
+  for two checks: a network switch (VPN on/off, new wifi) left it like that for minutes.
+  It reads that from cloudflared's `/ready`, so publish the metrics port on the node:
+  `127.0.0.1:8081:8081` (`node.override.yaml` already does).
 - **Each node searches from its own IP.** Engine captchas and suspensions are per node.
   Run nodes on residential connections: datacenter ranges get captchas on the first queries.
 

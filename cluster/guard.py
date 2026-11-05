@@ -7,7 +7,9 @@ any good. A laptop on hotel wifi stays connected and answers in 10 s. This guard
 the node itself: one HTTPS request to PROBE, timed. After N slow checks in a row it
 stops the node's cloudflared container, but only while another replica is connected,
 so the cluster never goes dark because of it. It starts the container again after N
-good checks, or at once when no other replica is left (slow beats nothing).
+good checks, or at once when no other replica is left (slow beats nothing). It also
+restarts the container when cloudflared runs but holds no tunnel connection for two
+checks in a row (its /ready metrics endpoint, published on 127.0.0.1:8081).
 
   cluster/guard.py            one check; launchd runs it every 60 s
   cluster/guard.py status     last check, streaks, connected replicas
@@ -27,6 +29,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -35,6 +38,7 @@ KEYCHAIN = os.environ.get("SEARCH_GUARD_KEYCHAIN", "cloudflare-api-token")
 PROBE = os.environ.get("SEARCH_GUARD_PROBE", "https://www.google.com/generate_204")
 SLOW = float(os.environ.get("SEARCH_GUARD_SLOW", "1.5"))
 N = int(os.environ.get("SEARCH_GUARD_N", "3"))
+READY = os.environ.get("SEARCH_GUARD_READY", "http://127.0.0.1:8081/ready")
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "search-guard"
 LABEL = "org.searxng-cluster.guard"
 PLIST = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
@@ -64,6 +68,17 @@ def container() -> tuple[bool, str]:
     words = (info["Config"].get("Cmd") or []) + [e.split("=", 1)[-1] for e in info["Config"].get("Env") or []]
     token = next((w for w in words if w.startswith("eyJ")), "")
     return bool(info["State"]["Running"]), token
+
+
+def ready() -> bool | None:
+    """Does our own cloudflared hold a tunnel connection? None when its metrics are not reachable."""
+    try:
+        with urllib.request.urlopen(READY, timeout=5) as r:
+            return json.load(r).get("readyConnections", 0) > 0
+    except urllib.error.HTTPError as e:  # 503 = no connection registered
+        return False if e.code == 503 else None
+    except Exception:
+        return None
 
 
 def replicas(token: str) -> int | None:
@@ -111,7 +126,16 @@ def check() -> int:
         st["last"]["note"] = f"no container {CONTAINER}"
         save(st)
         return 0
-    if running and st["bad"] >= N:
+    alive = ready() if running else None
+    st["dead"] = st.get("dead", 0) + 1 if alive is False else 0
+    st["last"]["ready"] = alive
+    if running and st["dead"] >= 2:
+        # A network switch (WARP on/off, new wifi) can leave cloudflared running with no
+        # connection and not recovering for minutes (seen 04.11.2026). A restart re-registers.
+        if sh("docker", "restart", CONTAINER).returncode == 0:
+            st["dead"] = 0
+            log("restarted cloudflared: running but no tunnel connection for 2 checks")
+    elif running and st["bad"] >= N:
         total = replicas(token)
         st["last"]["replicas"] = total
         if total is not None and total >= 2:
