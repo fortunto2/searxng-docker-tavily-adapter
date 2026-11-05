@@ -47,3 +47,4 @@ docker-compose.override.yaml
 
 # Search cluster node secrets
 cluster/node.env
+_work/

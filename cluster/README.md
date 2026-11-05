@@ -42,26 +42,31 @@ Move to a load balancer when guard-style self-eviction is no longer enough.
 
 ## Add a node
 
-On the node (Linux or macOS with Docker, compose >= 2.24):
+On the node (Linux or macOS with Docker, compose >= 2.24, a residential connection, ~400 MB RAM):
 
 ```bash
 git clone https://github.com/fortunto2/searxng-docker-tavily-adapter && cd searxng-docker-tavily-adapter
+security find-generic-password -s <keychain item with the tunnel token> -w | cluster/node-up.sh
 ```
 
-From the main node, give it a config without your engine credentials and the tunnel token:
+The tunnel token comes from whoever runs the tunnel, out of band; keep it in the OS keychain
+(`secret-tool` on Linux) and pipe it in, never paste it into a file in the repo. `node-up.sh`:
 
-```bash
-python3 cluster/render-node-config.py config.yaml | ssh NODE 'cat > searxng-docker-tavily-adapter/config.yaml'
-printf '%s' "$TUNNEL_TOKEN" | ssh NODE 'cd searxng-docker-tavily-adapter && cluster/node-up.sh'
-```
+- renders `config.yaml` from `config.example.yaml` when there is none: a fresh
+  `server.secret_key`, and every engine that needs a credential disabled (it lists them in the
+  first line). It uses the python inside the SearXNG image, so the node installs nothing else;
+- keeps the token in `cluster/node.env` (mode 600, gitignored), binds the local ports to
+  127.0.0.1 only (Docker bypasses the host firewall), starts the five services and waits until
+  they are healthy.
 
-`render-node-config.py` writes a fresh `server.secret_key` and disables every engine that
-needs a credential (it lists them in the first line). `node-up.sh` keeps the token in
-`cluster/node.env` (mode 600, gitignored), binds the local ports to 127.0.0.1 only (Docker
-bypasses the host firewall), starts the five services and waits until they are healthy.
+To give a node the main node's engine set instead of the example's, render it there and copy it:
+`python3 cluster/render-node-config.py config.yaml | ssh NODE 'cat > searxng-docker-tavily-adapter/config.yaml'`.
 
-Check that the tunnel sees it: the tunnel's page in Zero Trust lists one connector per
-node, or `guard.py status` prints `replicas_now`.
+Check that it joined: `curl -s 127.0.0.1:8081/ready` on the node shows `readyConnections` of 1 or
+more, and `curl -s -X POST 127.0.0.1:8013/search -H 'Content-Type: application/json' -d '{"query":"test","max_results":3}'`
+returns results. The tunnel's page in Zero Trust lists one connector per node.
+
+Update later: `cluster/node-up.sh` again (it pulls, reuses `node.env` and `config.yaml`).
 
 ## Guard (nodes on unreliable networks)
 
